@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, Stack, TextField, Typography,
 } from '@mui/material';
@@ -23,8 +23,17 @@ export default function UpdatePricesDialog({ prices, gramsPerPound, onClose, onS
   const [error, setError] = useState('');
   const [confirmBig, setConfirmBig] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [market, setMarket] = useState(null);
 
   const base = useMemo(() => [...prices].sort((a, b) => b.purity - a.purity)[0], [prices]);
+
+  useEffect(() => {
+    let active = true;
+    api.get('/gold-prices/market')
+      .then((res) => active && setMarket(res.data))
+      .catch((err) => active && notify(errorMessage(err), 'error'));
+    return () => { active = false; };
+  }, [notify]);
 
   const rows = prices.map((p) => {
     const raw = values[p.karat_id];
@@ -106,6 +115,25 @@ export default function UpdatePricesDialog({ prices, gramsPerPound, onClose, onS
       </DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+        <Box sx={{ mb: 2, p: 1.5, bgcolor: stone[50], borderRadius: '18px' }}>
+          <Typography variant="caption" color="text.secondary">Live market rate · read only</Typography>
+          {market?.status === 'success' ? (
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+              {market.karats.map((karat) => (
+                <Box key={karat.karat_id} sx={{ bgcolor: '#fff', borderRadius: '12px', px: 1.25, py: 0.75 }}>
+                  <Typography variant="caption" color="text.secondary">{karat.karat}</Typography>
+                  <Typography sx={{ fontWeight: 600 }}>{formatMoney(karat.price_per_pound)} {market.currency}</Typography>
+                  <Typography variant="caption" color="text.secondary">/ pound</Typography>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {market?.status === 'error' ? market.message : 'Loading market rate…'}
+            </Typography>
+          )}
+        </Box>
 
         {prices.length > 1 && (
           <Button size="small" startIcon={<CalculateIcon />} onClick={fillFromBase} sx={{ mb: 1 }}>

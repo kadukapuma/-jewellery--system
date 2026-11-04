@@ -18,4 +18,5 @@ export const env = {
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  goldPriceUrl: process.env.GOLD_PRICE_URL || 'https://www.goldpricetoday.lk/api/v1/gold-price',
 };

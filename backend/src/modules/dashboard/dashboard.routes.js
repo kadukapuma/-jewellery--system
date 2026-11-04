@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
-import { getCurrentPrices, getGramsPerPound } from '../gold-prices/gold-prices.service.js';
+import { getCurrentPrices, getGramsPerPound, getLiveGoldPrice } from '../gold-prices/gold-prices.service.js';
 
 const router = Router();
 
@@ -9,10 +9,11 @@ const has = (req, code) => req.user.is_super_admin || req.user.permissionSet.has
 
 // Each section is only included when the user may see that data.
 router.get('/', requirePermission('dashboard.view'), async (req, res) => {
-  const result = { gold_prices: null, sales: null, inventory: null, purchases: null, workshop: null, customers: null };
+  const result = { gold_prices: null, live_gold: null, sales: null, inventory: null, purchases: null, workshop: null, customers: null };
 
   if (has(req, 'gold_prices.view')) {
     result.gold_prices = { grams_per_pound: await getGramsPerPound(), prices: await getCurrentPrices() };
+    result.live_gold = await getLiveGoldPrice();
   }
 
   if (has(req, 'sales.view')) {

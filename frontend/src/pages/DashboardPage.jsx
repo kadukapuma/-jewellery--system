@@ -7,21 +7,31 @@ import InventoryIcon from '@mui/icons-material/Inventory2Outlined';
 import PurchaseIcon from '@mui/icons-material/ShoppingBagOutlined';
 import WorkshopIcon from '@mui/icons-material/HandymanOutlined';
 import CustomerIcon from '@mui/icons-material/GroupOutlined';
+import PublicIcon from '@mui/icons-material/PublicOutlined';
 import api, { errorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useNotify } from '../components/Notify';
 import StatCard from '../components/StatCard';
 import SectionCard from '../components/SectionCard';
 import BarChart from '../components/BarChart';
+import PriceHistoryChart from './pricing/PriceHistoryChart';
 import { formatAmount, formatMoney } from '../utils/format';
 
 const PRICE_TONES = ['gold', 'light', 'gray'];
+
+function formatLiveTimestamp(value) {
+  if (!value) return 'Unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
 
 export default function DashboardPage() {
   const { can } = useAuth();
   const notify = useNotify();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [goldHistory, setGoldHistory] = useState([]);
+  const [goldHistoryKarat, setGoldHistoryKarat] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -34,6 +44,17 @@ export default function DashboardPage() {
 
   const prices = data?.gold_prices?.prices || [];
   const missingToday = prices.filter((p) => !p.is_today);
+
+  useEffect(() => {
+    const karatId = prices[0]?.karat_id;
+    if (!karatId) return undefined;
+    let active = true;
+    setGoldHistoryKarat(karatId);
+    api.get('/gold-prices/history', { params: { karat_id: karatId, days: 30 } })
+      .then((res) => active && setGoldHistory(res.data))
+      .catch((err) => active && notify(errorMessage(err), 'error'));
+    return () => { active = false; };
+  }, [data, notify]);
 
   const priceCards = prices.slice(0, 3).map((p, i) => (
     <StatCard
@@ -111,6 +132,50 @@ export default function DashboardPage() {
         </Alert>
       )}
 
+      {(data?.live_gold || goldHistoryKarat) && (
+        <Grid container spacing={2.5} sx={{ mb: 3, alignItems: 'stretch' }}>
+          {data?.live_gold && (
+          <Grid size={{ xs: 12, lg: 6 }} sx={{ display: 'flex', minWidth: 0 }}>
+            <SectionCard icon={<PublicIcon fontSize="small" />} title="Live gold price" sx={{ width: '100%' }}>
+              {data.live_gold.status === 'success' ? (
+                <>
+                  <Typography sx={{ fontSize: 32, fontWeight: 600 }}>
+                    {formatMoney(data.live_gold.pure_gold_per_pound)} {data.live_gold.currency}
+                  </Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    24K per pound · Last synced {formatLiveTimestamp(data.live_gold.timestamp || data.live_gold.fetched_at)}
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 1, mt: 2 }}>
+                    {data.live_gold.karats.map((karat) => (
+                      <Box key={karat.karat_id} sx={{ bgcolor: '#FBF7EE', borderRadius: '14px', p: 1.25 }}>
+                        <Typography variant="caption" color="text.secondary">{karat.karat}</Typography>
+                        <Typography sx={{ fontWeight: 600 }}>{formatMoney(karat.price_per_pound)}</Typography>
+                        <Typography variant="caption" color="text.secondary">LKR / pound</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </>
+              ) : (
+                <Typography color="text.secondary" variant="body2">
+                  {data.live_gold.status === 'not_configured' ? 'Add METALS_DEV_API_KEY to backend/.env to enable live prices.' : data.live_gold.message}
+                </Typography>
+              )}
+            </SectionCard>
+          </Grid>
+          )}
+          {goldHistoryKarat && (
+            <Grid size={{ xs: 12, lg: 6 }} sx={{ display: 'flex' }}>
+              <SectionCard title={`${prices.find((p) => p.karat_id === goldHistoryKarat)?.karat || 'Gold'} price movement · 30 days`} to="/gold-prices" sx={{ width: '100%' }}>
+                <PriceHistoryChart
+                  rows={goldHistory}
+                  karat={prices.find((p) => p.karat_id === goldHistoryKarat)?.karat}
+                />
+              </SectionCard>
+            </Grid>
+          )}
+        </Grid>
+      )}
+
       {businessSummaryCards.length > 0 && (
         <Grid container spacing={2.5} sx={{ mb: 3 }}>
           {businessSummaryCards.map((card) => (
@@ -129,7 +194,7 @@ export default function DashboardPage() {
         </Grid>
       )}
 
-      <Grid container spacing={2.5}>
+      <Grid container spacing={2.5} sx={{ alignItems: 'stretch' }}>
         {data?.inventory && (
           <Grid size={{ xs: 12, md: 6 }}>
             <SectionCard icon={<InventoryIcon fontSize="small" />} title="Inventory value" to="/items">

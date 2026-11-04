@@ -1,4 +1,5 @@
 import { pool } from '../../config/db.js';
+import { env } from '../../config/env.js';
 import { getSetting } from '../../utils/settings.js';
 import { DEFAULT_GRAMS_PER_POUND, percentChange } from '../../services/pricing.js';
 
@@ -42,4 +43,50 @@ export async function getCurrentPrice(db, karatId) {
     [karatId],
   );
   return rows[0] || null;
+}
+
+export async function getLiveGoldPrice() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const fetchedAt = new Date().toISOString();
+    const response = await fetch(env.goldPriceUrl, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.status !== 'ok' || typeof payload.prices?.['24k']?.per_8g !== 'number') {
+      return { status: 'error', message: 'Gold price provider returned an invalid response' };
+    }
+    const [karats] = await pool.query(
+      'SELECT id, name, purity FROM karats WHERE is_active = 1 ORDER BY sort_order, id',
+    );
+    const gramsPerPound = await getGramsPerPound();
+    const basePrice = payload.prices['24k'].per_8g;
+    const basePurity = Number(karats.find((karat) => karat.name.toLowerCase() === '24k')?.purity || 0.999);
+    return {
+      status: 'success',
+      currency: payload.currency || 'LKR',
+      unit: '8g',
+      timestamp: payload.as_of,
+      fetched_at: fetchedAt,
+      grams_per_pound: gramsPerPound,
+      pure_gold_per_pound: basePrice,
+      karats: karats.map((karat) => ({
+        karat_id: karat.id,
+        karat: karat.name,
+        purity: Number(karat.purity),
+        price_per_pound: payload.prices[karat.name.toLowerCase()]?.per_8g
+          ?? (basePrice * Number(karat.purity)) / basePurity,
+      })),
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error.name === 'AbortError' ? 'Live gold price request timed out' : 'Live gold price request failed',
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }

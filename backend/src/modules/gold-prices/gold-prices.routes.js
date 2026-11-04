@@ -6,7 +6,7 @@ import { HttpError } from '../../utils/httpError.js';
 import { idSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
 import { gramFromPound } from '../../services/pricing.js';
-import { getCurrentPrices, getGramsPerPound } from './gold-prices.service.js';
+import { getCurrentPrices, getGramsPerPound, getLiveGoldPrice } from './gold-prices.service.js';
 
 const router = Router();
 
@@ -29,6 +29,10 @@ const historySchema = z.object({
 
 router.get('/current', requirePermission('gold_prices.view'), async (req, res) => {
   res.json({ grams_per_pound: await getGramsPerPound(), prices: await getCurrentPrices() });
+});
+
+router.get('/market', requirePermission('gold_prices.view'), async (req, res) => {
+  res.json(await getLiveGoldPrice());
 });
 
 router.get('/history', requirePermission('gold_prices.view'), async (req, res) => {
