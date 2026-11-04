@@ -244,6 +244,10 @@ CREATE TABLE items (
   net_weight_g   DECIMAL(10,3) NOT NULL,                -- actual weight of the piece (7.000)
   wastage_g      DECIMAL(10,3) NOT NULL DEFAULT 0,      -- charged to customer (1.000)
   making_charge  DECIMAL(14,2) NOT NULL DEFAULT 0,      -- labour charged to customer
+  -- Selling range as % ABOVE the final price (gold value + making), so it follows the
+  -- daily gold price: min price = final x (1 + min%/100), max price = final x (1 + max%/100).
+  price_min_percent DECIMAL(7,2) NOT NULL DEFAULT 0,
+  price_max_percent DECIMAL(7,2) NOT NULL DEFAULT 0,
   cost_price     DECIMAL(14,2) NOT NULL DEFAULT 0,      -- what the shop paid (purchase or gold+labour)
   stock_qty      INT NOT NULL DEFAULT 0,                -- 1 for single pieces, n for biscuits
   status         ENUM('in_stock','sold','with_craftsman','inactive') NOT NULL DEFAULT 'in_stock',
@@ -303,13 +307,17 @@ CREATE TABLE purchase_lines (
 CREATE TABLE craft_jobs (
   id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   job_no               VARCHAR(30) NOT NULL UNIQUE,     -- JOB-000001
+  -- new: a new piece becomes a new item; make_item: fills in a saved item (stock 0);
+  -- rework: a saved piece goes to the craftsman and comes back as the same item
+  job_type             ENUM('new','make_item','rework') NOT NULL DEFAULT 'new',
   craftsman_id         INT UNSIGNED NOT NULL,
   category_id          INT UNSIGNED NOT NULL,           -- what is being made (Ring)
   karat_id             INT UNSIGNED NOT NULL,
   customer_id          INT UNSIGNED NULL,               -- set for customer orders
   source_item_id       INT UNSIGNED NULL,               -- biscuit/old gold taken from stock
   description          VARCHAR(255) NULL,
-  issued_weight_g      DECIMAL(10,3) NOT NULL,          -- 8.000
+  issued_weight_g      DECIMAL(10,3) NOT NULL,          -- 8.000 (rework: piece weight + extra gold)
+  item_weight_g        DECIMAL(10,3) NULL,              -- rework: weight of the saved piece when given
   issue_date           DATE NOT NULL,
   returned_weight_g    DECIMAL(10,3) NULL,              -- 7.000 (on completion)
   wastage_g            DECIMAL(10,3) NULL,              -- 1.000 (calculated)
@@ -317,7 +325,7 @@ CREATE TABLE craft_jobs (
   craftsman_fee        DECIMAL(14,2) NOT NULL DEFAULT 0,-- earned by craftsman (added to their account on completion)
   completed_date       DATE NULL,
   status               ENUM('issued','completed','cancelled') NOT NULL DEFAULT 'issued',
-  item_id              INT UNSIGNED NULL,               -- finished item created on completion
+  item_id              INT UNSIGNED NULL,               -- finished item: created on completion (new) or the saved item (make_item / rework)
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -376,7 +384,10 @@ CREATE TABLE sale_lines (
   gram_price_used      DECIMAL(14,2) NOT NULL,          -- 12500.00
   gold_value           DECIMAL(14,2) NOT NULL,          -- 100000.00
   making_charge        DECIMAL(14,2) NOT NULL DEFAULT 0,-- 5000.00
-  line_total           DECIMAL(14,2) NOT NULL,          -- 105000.00
+  line_total           DECIMAL(14,2) NOT NULL,          -- price actually charged (after any discount)
+  price_final          DECIMAL(14,2) NOT NULL DEFAULT 0,-- gold value + making (the floor)
+  price_min            DECIMAL(14,2) NOT NULL DEFAULT 0,-- lowest allowed without Admin
+  price_max            DECIMAL(14,2) NOT NULL DEFAULT 0,-- normal selling price (shown on the bill)
   unit_cost            DECIMAL(14,2) NOT NULL DEFAULT 0,-- items.cost_price at the time of sale (for profit)
   CONSTRAINT fk_sl_sale  FOREIGN KEY (sale_id)       REFERENCES sales(id) ON DELETE CASCADE,
   CONSTRAINT fk_sl_item  FOREIGN KEY (item_id)       REFERENCES items(id),
@@ -395,11 +406,14 @@ CREATE TABLE stock_movements (
   weight_change_g      DECIMAL(10,3) NOT NULL,
   ref_table            VARCHAR(30) NULL,                -- 'purchases','sales','craft_jobs'
   ref_id               INT UNSIGNED NULL,
+  reason               VARCHAR(30) NULL,                -- manual entries: received, count_correction, damaged ...
+  note                 VARCHAR(255) NULL,
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_sm_item FOREIGN KEY (item_id)    REFERENCES items(id),
   CONSTRAINT fk_sm_user FOREIGN KEY (created_by) REFERENCES users(id),
-  INDEX idx_sm_item (item_id)
+  INDEX idx_sm_item (item_id),
+  INDEX idx_sm_created (created_at)
 );
 
 -- =====================================================================
@@ -670,6 +684,7 @@ INSERT INTO permissions (code, module, action, description, sort_order) VALUES
   ('reports.wastage',         'reports',     'wastage',      'Craftsman wastage reports',                222),
   ('reports.profit',          'reports',     'profit',       'Profit report (shows cost prices)',        223),
   ('items.view_cost',         'items',       'view_cost',    'See purchase / cost price of items',        55),
+  ('items.adjust_stock',      'items',       'adjust_stock', 'Add or remove stock of an item',            56),
   ('settings.edit',           'settings',    'edit',         'Change system settings',                   230),
   ('audit_logs.view',         'audit_logs',  'view',         'See audit and login history',              240),
   ('sales.credit',            'sales',       'credit',       'Save a bill with an unpaid balance',       215),

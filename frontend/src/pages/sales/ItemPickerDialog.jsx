@@ -7,9 +7,17 @@ import SearchIcon from '@mui/icons-material/Search';
 import api, { errorMessage } from '../../api/client';
 import { formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
+import PriceRange from '../../components/PriceRange';
+
+const sellable = (item) => item.stock_qty > 0 && item.current_gram_price !== null;
 
 // Browse every in-stock item and pick one or more for the bill.
-export default function ItemPickerDialog({ inCart, onClose, onAdd }) {
+// single: one click picks one item and closes (used by craft jobs); params / canPick change which items show and can be picked.
+export default function ItemPickerDialog({
+  inCart = new Set(), onClose, onAdd, single = false, params: extraParams = { status: 'in_stock' }, canPick: allowed = sellable,
+  title = 'Select items', emptyText = 'No items in stock match',
+}) {
+  const paramsKey = JSON.stringify(extraParams);
   const [categories, setCategories] = useState([]);
   const [karats, setKarats] = useState([]);
   const [searchText, setSearchText] = useState('');
@@ -39,19 +47,20 @@ export default function ItemPickerDialog({ inCart, onClose, onAdd }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    const params = { ...filters, status: 'in_stock', page, page_size: pageSize };
+    const params = { ...filters, ...JSON.parse(paramsKey), page, page_size: pageSize };
     Object.keys(params).forEach((k) => params[k] === '' && delete params[k]);
     api.get('/items', { params })
       .then((res) => active && setData(res.data))
       .catch((err) => active && setError(errorMessage(err)))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [filters, page, pageSize]);
+  }, [filters, page, pageSize, paramsKey]);
 
-  const canPick = (item) => item.stock_qty > 0 && item.current_gram_price !== null && !inCart.has(item.id);
+  const canPick = (item) => allowed(item) && !inCart.has(item.id);
 
   const toggle = (item) => {
     if (!canPick(item)) return;
+    if (single) { onAdd([item]); return; }
     setPicked((prev) => {
       const next = new Map(prev);
       if (next.has(item.id)) next.delete(item.id);
@@ -64,7 +73,7 @@ export default function ItemPickerDialog({ inCart, onClose, onAdd }) {
 
   return (
     <Dialog open onClose={onClose} maxWidth="lg" fullWidth>
-      <DialogTitle>Select items</DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <Box sx={{ display: 'flex', gap: 1.5, px: 3, pb: 2, flexWrap: 'wrap' }}>
         <TextField
           autoFocus
@@ -122,7 +131,7 @@ export default function ItemPickerDialog({ inCart, onClose, onAdd }) {
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{Number(i.wastage_g) ? formatWeight(i.wastage_g) : '—'}</TableCell>
                     <TableCell align="right">{Number(i.making_charge) ? formatMoney(i.making_charge) : '—'}</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {i.price_now === null ? <Typography variant="caption" color="warning.main">No gold price</Typography> : formatMoney(i.price_now)}
+                      <PriceRange item={i} missingColor="warning.main" />
                     </TableCell>
                     <TableCell align="right">
                       {added ? <Chip size="small" label="On bill" /> : i.stock_qty}
@@ -131,7 +140,7 @@ export default function ItemPickerDialog({ inCart, onClose, onAdd }) {
                 );
               })}
               {!loading && !data.items.length && (
-                <TableRow><TableCell colSpan={9} align="center" sx={{ py: 5, color: 'text.secondary' }}>No items in stock match</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} align="center" sx={{ py: 5, color: 'text.secondary' }}>{emptyText}</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -141,12 +150,14 @@ export default function ItemPickerDialog({ inCart, onClose, onAdd }) {
       </DialogContent>
       <DialogActions>
         <Typography variant="body2" color="text.secondary" sx={{ mr: 'auto', ml: 1 }}>
-          Click to tick, double-click to add one straight away
+          {single ? 'Click an item to choose it' : 'Click to tick, double-click to add one straight away'}
         </Typography>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disabled={!picked.size} onClick={() => onAdd([...picked.values()])}>
-          Add {picked.size || ''} to bill
-        </Button>
+        {!single && (
+          <Button variant="contained" disabled={!picked.size} onClick={() => onAdd([...picked.values()])}>
+            Add {picked.size || ''} to bill
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

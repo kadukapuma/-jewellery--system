@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
-import { PAYMENT_METHODS, dateSchema, gramsSchema, optionalText } from '../../utils/validation.js';
+import { PAYMENT_METHODS, checkPriceRange, dateSchema, gramsSchema, optionalText, priceRangeFields } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocatePayment, applyAdvances, recomputePurchase } from '../supplier-payments/supplier-payments.service.js';
@@ -24,11 +24,13 @@ const lineSchema = z
     net_weight_g: gramsSchema('weight').optional().nullable(),
     wastage_g: gramsSchema('wastage').refine((v) => v >= 0, 'Cannot be negative').default(0),
     making_charge: z.coerce.number().min(0, 'Cannot be negative').max(1e10).default(0),
+    ...priceRangeFields,
     qty: z.coerce.number({ error: 'Enter the quantity' }).int('Whole number only').min(1, 'At least 1').max(100000),
     purchase_price: z.coerce.number({ error: 'Enter the price paid' }).positive('Price must be above 0').max(1e12),
   })
   .superRefine((l, ctx) => {
     if (l.item_id) return;
+    checkPriceRange(l, ctx);
     if (!l.name) ctx.addIssue({ code: 'custom', path: ['name'], message: 'Item name is required' });
     if (!l.category_id) ctx.addIssue({ code: 'custom', path: ['category_id'], message: 'Choose a category' });
     if (!l.karat_id) ctx.addIssue({ code: 'custom', path: ['karat_id'], message: 'Choose a karat' });
@@ -176,10 +178,10 @@ router.post('/', requirePermission('purchases.create'), async (req, res) => {
         const barcode = await nextDocumentNumber(conn, 'ITEM');
         const [itemResult] = await conn.query(
           `INSERT INTO items (item_code, barcode, name, category_id, karat_id, source, net_weight_g, wastage_g,
-                              making_charge, cost_price, stock_qty, status)
-           VALUES (?, ?, ?, ?, ?, 'purchase', ?, ?, ?, ?, ?, 'in_stock')`,
+                              making_charge, price_min_percent, price_max_percent, cost_price, stock_qty, status)
+           VALUES (?, ?, ?, ?, ?, 'purchase', ?, ?, ?, ?, ?, ?, ?, 'in_stock')`,
           [line.item_code || barcode, barcode, line.name, line.category_id, line.karat_id, line.net_weight_g,
-            line.wastage_g, line.making_charge, unitCost, line.qty],
+            line.wastage_g, line.making_charge, line.price_min_percent, line.price_max_percent, unitCost, line.qty],
         );
         itemId = itemResult.insertId;
         karatId = line.karat_id;

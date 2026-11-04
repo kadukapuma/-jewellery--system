@@ -47,6 +47,8 @@ function CancelJobDialog({ job, onClose, onDone }) {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Use this when {job.craftsman_name} gives back all {formatWeight(job.issued_weight_g)} of gold.
           {job.source_item_code ? ` ${job.source_item_code} goes back into stock.` : ''}
+          {job.job_type === 'rework' ? ` ${job.finished_item_code} goes back into stock as it was.` : ''}
+          {job.job_type === 'make_item' ? ` ${job.finished_item_code} stays saved, ready for another job.` : ''}
         </Typography>
         <TextField label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} />
       </DialogContent>
@@ -112,7 +114,7 @@ export default function CraftJobsPage() {
       <PageHeader
         title="Craft jobs"
         subtitle="Gold given to craftsmen and the pieces they bring back"
-        actions={can('craft_jobs.create') && <Button variant="contained" startIcon={<AddIcon />} onClick={() => setIssuing(true)}>Give gold</Button>}
+        actions={can('craft_jobs.create') && <Button variant="contained" startIcon={<AddIcon />} onClick={() => setIssuing(true)}>Give work</Button>}
       />
       <Card>
         <Box sx={{ display: 'flex', gap: 1.5, p: 2, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -159,7 +161,8 @@ export default function CraftJobsPage() {
                     <TableCell sx={{ minWidth: 120 }}>
                       {j.description || j.category_name}
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        {j.category_name}{j.source_item_code ? ` · from ${j.source_item_code}` : ''}
+                        {j.job_type === 'rework' ? `Repair · ${j.finished_item_code}` : j.job_type === 'make_item' ? `Make · ${j.finished_item_code}` : j.category_name}
+                        {j.source_item_code ? ` · from ${j.source_item_code}` : ''}
                       </Typography>
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>

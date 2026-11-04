@@ -9,6 +9,7 @@ import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';
 import { calcItemPrice, formatWeight } from '../../utils/pricing';
 import { gold, stone } from '../../theme';
+import PriceRangeFields, { priceRangeErrors } from '../../components/PriceRangeFields';
 
 export default function ItemFormDialog({ item, categories, karats, onClose, onSaved }) {
   const isNew = !item;
@@ -22,6 +23,8 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
     net_weight_g: item?.net_weight_g ?? '',
     wastage_g: item?.wastage_g ?? 0,
     making_charge: item?.making_charge ?? 0,
+    price_min_percent: Number(item?.price_min_percent ?? 0),
+    price_max_percent: Number(item?.price_max_percent ?? 0),
     cost_price: item?.cost_price ?? '',
     stock_qty: item?.stock_qty ?? 1,
     status: item?.status === 'inactive' ? 'inactive' : 'in_stock',
@@ -47,6 +50,13 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
 
   const gramPrice = prices.find((p) => p.karat_id === form.karat_id)?.gram_price ?? null;
   const preview = Number(form.net_weight_g) > 0 && gramPrice !== null ? calcItemPrice(form, gramPrice) : null;
+  const final = preview?.line_total ?? null;
+
+  const setPercent = (field, percent) => {
+    setForm((f) => ({ ...f, [field]: percent }));
+    setErrors((prev) => ({ ...prev, [field]: undefined }));
+  };
+  const cost = canCost && form.cost_price !== '' ? Number(form.cost_price) : null;
 
   const validate = () => {
     const e = {};
@@ -58,7 +68,7 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
     if (Number(form.making_charge) < 0) e.making_charge = 'Cannot be negative';
     if (!Number.isInteger(Number(form.stock_qty)) || Number(form.stock_qty) < 0) e.stock_qty = 'Whole number, 0 or more';
     if (!isNew && !form.item_code.trim()) e.item_code = 'Code is required';
-    return e;
+    return { ...e, ...priceRangeErrors(form.price_min_percent, form.price_max_percent) };
   };
 
   const save = async () => {
@@ -159,12 +169,9 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
                     </Box>
                   ))}
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, pt: 1, borderTop: `1px solid ${gold[200]}` }}>
-                    <Typography sx={{ fontWeight: 600 }}>Price</Typography>
-                    <Typography sx={{ fontWeight: 700, color: gold[800] }}>{formatMoney(preview.line_total)}</Typography>
+                    <Typography sx={{ fontWeight: 600 }}>Final price</Typography>
+                    <Typography sx={{ fontWeight: 700, color: gold[800] }}>{formatMoney(final)}</Typography>
                   </Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                    The bill uses the gold price at the time of sale.
-                  </Typography>
                 </>
               ) : (
                 <Typography variant="body2" sx={{ color: stone[600] }}>
@@ -173,6 +180,23 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
                     : 'Choose a karat and enter the weight to see the price at today’s rate.'}
                 </Typography>
               )}
+            </Box>
+
+            <Box sx={{ border: `1px solid ${stone[200]}`, borderRadius: '20px', p: 2.5, mt: 2 }}>
+              <Typography sx={{ fontWeight: 600 }}>Selling price range</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                {final === null
+                  ? 'Enter how many % above the final price. The prices appear once the weight and gold price are known.'
+                  : 'Sold at the max price; discounts can go down to the min price. 0% = the final price. As percentages, the prices follow the gold price automatically.'}
+              </Typography>
+              <PriceRangeFields
+                final={final}
+                minPercent={form.price_min_percent}
+                maxPercent={form.price_max_percent}
+                onChange={setPercent}
+                errors={errors}
+                cost={cost}
+              />
             </Box>
           </Grid>
         </Grid>

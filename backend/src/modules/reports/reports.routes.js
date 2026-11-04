@@ -83,13 +83,14 @@ router.get('/sales', requirePermission('reports.sales'), async (req, res) => {
   });
 });
 
-// Profit per line = what the customer paid for it (after its share of the bill discount) - its cost.
+// Profit per line = what the customer paid for it (after any discount) - its cost.
 router.get('/profit', requirePermission('reports.profit'), async (req, res) => {
   const { from, to } = rangeSchema.parse(req.query);
   const [lines] = await pool.query(
     `SELECT s.id AS sale_id, s.invoice_no, s.sale_date, i.item_code, i.name AS item_name, c.name AS category,
             sl.qty, sl.billed_weight_g, sl.line_total, sl.unit_cost,
-            sl.line_total - IF(s.subtotal > 0, s.discount * sl.line_total / s.subtotal, 0) AS revenue,
+            -- line_total already has its own discount; only a whole-bill discount is shared across the lines
+            sl.line_total * s.total / NULLIF((SELECT SUM(x.line_total) FROM sale_lines x WHERE x.sale_id = s.id), 0) AS revenue,
             sl.unit_cost * sl.qty AS cost
      FROM sale_lines sl
      JOIN sales s ON s.id = sl.sale_id

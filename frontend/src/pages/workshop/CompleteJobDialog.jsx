@@ -9,7 +9,8 @@ import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';
 import { calcItemPrice, formatWeight } from '../../utils/pricing';
 import { todayYmd } from '../../utils/payments';
-import { gold } from '../../theme';
+import { gold, stone } from '../../theme';
+import PriceRangeFields, { priceRangeErrors } from '../../components/PriceRangeFields';
 
 // Receive the finished piece: wastage = gold given − finished weight.
 export default function CompleteJobDialog({ job, onClose, onSaved }) {
@@ -17,11 +18,18 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
   const notify = useNotify();
   const [gramPrice, setGramPrice] = useState(null);
   const [printAfter, setPrintAfter] = useState(true);
+  // make_item / rework fill in the saved item instead of creating one.
+  const saved = job.job_type === 'make_item' || job.job_type === 'rework';
+  const rework = job.job_type === 'rework';
+  // Making one more of an item that is already in stock: the line keeps its weight and price per piece.
+  const addingPiece = job.job_type === 'make_item' && job.item_stock_qty > 0;
   const [form, setForm] = useState({
     returned_weight_g: '',
     item_name: job.description || job.category_name,
     item_code: '',
     making_charge: job.making_charge ?? 0,
+    price_min_percent: saved ? Number(job.item_price_min_percent) || 0 : 0,
+    price_max_percent: saved ? Number(job.item_price_max_percent) || 0 : 0,
     craftsman_fee: job.craftsman_fee ?? 0,
     completed_date: todayYmd(),
   });
@@ -45,8 +53,11 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
   const returned = Number(form.returned_weight_g) || 0;
   const wastage = returned > 0 ? Math.round((issued - returned) * 1000) / 1000 : null;
   const wastagePct = wastage !== null ? Math.round((wastage / issued) * 10000) / 100 : null;
+  // A reworked piece keeps the wastage and making it already had; this job's are added on top.
+  const totalWastage = rework ? Math.round((Number(job.item_wastage_g) + (wastage ?? 0)) * 1000) / 1000 : wastage;
+  const totalMaking = rework ? Number(job.item_making_charge) + (Number(form.making_charge) || 0) : form.making_charge;
   const price = returned > 0 && returned <= issued && gramPrice !== null
-    ? calcItemPrice({ net_weight_g: returned, wastage_g: wastage, making_charge: form.making_charge }, gramPrice)
+    ? calcItemPrice({ net_weight_g: returned, wastage_g: totalWastage, making_charge: totalMaking }, gramPrice)
     : null;
 
   const save = async () => {
@@ -54,7 +65,8 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
     const e = {};
     if (!(returned > 0)) e.returned_weight_g = 'Enter the weight of the finished piece';
     else if (returned > issued) e.returned_weight_g = `Cannot be more than the ${formatWeight(issued)} given`;
-    if (!form.item_name.trim()) e.item_name = 'Name the finished item';
+    if (!saved && !form.item_name.trim()) e.item_name = 'Name the finished item';
+    Object.assign(e, priceRangeErrors(form.price_min_percent, form.price_max_percent));
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
@@ -65,7 +77,8 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
         making_charge: Number(form.making_charge) || 0,
         craftsman_fee: Number(form.craftsman_fee) || 0,
       });
-      notify(`${job.job_no} received – item ${res.data.job.finished_item_code} is in stock`);
+      const code = res.data.job.finished_item_code;
+      notify(`${job.job_no} received – ${rework ? `${code} is back in stock` : saved ? `${code} is in stock` : `item ${code} is in stock`}`);
       onSaved(res.data, printAfter && can('tags.print'));
     } catch (err) {
       setErrors(fieldErrors(err));
@@ -100,9 +113,26 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
                 })}
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>{field('completed_date', 'Date received', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>
-              <Grid size={{ xs: 12, sm: 8 }}>{field('item_name', 'Item name', { required: true })}</Grid>
-              <Grid size={{ xs: 12, sm: 4 }}>{field('item_code', 'Item code', { placeholder: 'Auto' })}</Grid>
-              <Grid size={{ xs: 6 }}>{field('making_charge', 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'Customer pays' })}</Grid>
+              {saved ? (
+                <Grid size={{ xs: 12 }}>
+                  <Box sx={{ bgcolor: stone[50], borderRadius: '14px', px: 2, py: 1.2 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>{job.finished_item_code} · {job.finished_item_name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {rework
+                        ? `Same item comes back – was ${formatWeight(job.item_weight_g)}, wastage ${formatWeight(job.item_wastage_g)}, making ${formatMoney(job.item_making_charge)}`
+                        : addingPiece
+                          ? `Adds 1 piece – ${job.item_stock_qty} in stock now, ${formatWeight(job.item_net_weight_g)} each. The item keeps its weight and price; this job keeps the real weight and wastage.`
+                          : 'This saved item gets the finished weight and comes into stock'}
+                    </Typography>
+                  </Box>
+                </Grid>
+              ) : (
+                <>
+                  <Grid size={{ xs: 12, sm: 8 }}>{field('item_name', 'Item name', { required: true })}</Grid>
+                  <Grid size={{ xs: 12, sm: 4 }}>{field('item_code', 'Item code', { placeholder: 'Auto' })}</Grid>
+                </>
+              )}
+              <Grid size={{ xs: 6 }}>{field('making_charge', rework ? 'Making charge added' : 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: rework ? `Total ${formatMoney(totalMaking)}` : 'Customer pays' })}</Grid>
               <Grid size={{ xs: 6 }}>{field('craftsman_fee', 'Craftsman fee', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'Added to what you owe them' })}</Grid>
             </Grid>
           </Grid>
@@ -121,7 +151,7 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
               {price && (
                 <>
                   <Box sx={{ borderTop: `1px solid ${gold[200]}`, mt: 1, pt: 1 }}>
-                    <Typography variant="caption" color="text.secondary">Customer price at today’s rate</Typography>
+                    <Typography variant="caption" color="text.secondary">Final price at today’s rate</Typography>
                     <Typography variant="body2" color="text.secondary">
                       {formatWeight(price.billed_weight_g)} × {formatMoney(gramPrice)} + {formatMoney(price.making_charge)}
                     </Typography>
@@ -130,6 +160,19 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
                 </>
               )}
             </Box>
+            {!addingPiece && <Box sx={{ border: `1px solid ${stone[200]}`, borderRadius: '20px', p: 2.5, mt: 2 }}>
+              <Typography sx={{ fontWeight: 600, mb: 1.5 }}>Selling price range</Typography>
+              <PriceRangeFields
+                final={price?.line_total ?? null}
+                minPercent={form.price_min_percent}
+                maxPercent={form.price_max_percent}
+                onChange={(field, markup) => {
+                  setForm((f) => ({ ...f, [field]: markup }));
+                  setErrors((prev) => ({ ...prev, [field]: undefined }));
+                }}
+                errors={errors}
+              />
+            </Box>}
           </Grid>
         </Grid>
       </DialogContent>

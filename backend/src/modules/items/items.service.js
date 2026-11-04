@@ -1,6 +1,6 @@
 import { hasPermission } from '../../middleware/auth.js';
 import { HttpError } from '../../utils/httpError.js';
-import { calcItemPrice } from '../../services/pricing.js';
+import { calcItemPrice, calcPriceRange } from '../../services/pricing.js';
 
 // Item + category, karat and today's gram price for its karat.
 export const ITEM_SELECT = `
@@ -11,13 +11,16 @@ export const ITEM_SELECT = `
   JOIN karats k ON k.id = i.karat_id
   LEFT JOIN v_current_gold_prices cp ON cp.karat_id = i.karat_id`;
 
-// Adds the selling price at today's rate and hides cost unless the user may see it.
+// Adds today's final / min / max price and hides cost unless the user may see it.
 export function presentItem(row, req) {
   const { billed_weight_g } = calcItemPrice(row, 0);
+  const range = row.current_gram_price === null ? null : calcPriceRange(row, row.current_gram_price);
   const item = {
     ...row,
     billed_weight_g,
-    price_now: row.current_gram_price === null ? null : calcItemPrice(row, row.current_gram_price).line_total,
+    price_now: range?.final ?? null, // final price = gold value + making
+    price_min_now: range?.min ?? null,
+    price_max_now: range?.max ?? null,
   };
   if (!hasPermission(req, 'items.view_cost')) delete item.cost_price;
   return item;

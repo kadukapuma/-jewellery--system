@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material';
-import DiamondIcon from '@mui/icons-material/DiamondOutlined';
 import { useAuth } from '../auth/AuthContext';
 import { errorMessage } from '../api/client';
-import { gold } from '../theme';
+import AureonLogo from '../components/AureonLogo';
+import Footer from '../components/Footer';
 
 export default function LoginPage() {
   const { user, login } = useAuth();
@@ -37,13 +37,10 @@ export default function LoginPage() {
           sx={{
             display: { xs: 'none', md: 'flex' }, flexDirection: 'column', justifyContent: 'space-between',
             p: 6, color: '#fff',
-            background: `linear-gradient(155deg, ${gold[500]} 0%, ${gold[700]} 50%, ${gold[900]} 100%)`,
+            background: 'radial-gradient(ellipse at 30% 20%, #2A2216 0%, #0E0C09 70%)',
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <DiamondIcon />
-            <Typography sx={{ fontWeight: 700, fontSize: 20 }}>jewellery</Typography>
-          </Box>
+          <AureonLogo size={52} tone="dark" tagline />
           <Box>
             <Typography sx={{ fontSize: 56, fontWeight: 600, lineHeight: 1.02, letterSpacing: -2 }}>
               Gold, items<br />& billing
@@ -54,37 +51,37 @@ export default function LoginPage() {
           </Box>
         </Box>
 
-        <Box sx={{ display: 'grid', placeItems: 'center', p: { xs: 2, md: 4 } }}>
-          <Box sx={{ width: '100%', maxWidth: 360 }}>
-          <Stack spacing={1} sx={{ mb: 4 }}>
-            <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', gap: 1, color: 'primary.main', mb: 2 }}>
-              <DiamondIcon />
-              <Typography sx={{ fontWeight: 700, fontSize: 20 }}>jewellery</Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%', p: { xs: 2, md: 4 } }}>
+          <Box sx={{ flexGrow: 1, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ width: '100%', maxWidth: 360 }}>
+              <Stack spacing={1} sx={{ mb: 4 }}>
+                <AureonLogo size={40} tagline sx={{ display: { xs: 'flex', md: 'none' }, mb: 2 }} />
+                <Typography sx={{ fontWeight: 600, fontSize: 36, letterSpacing: -1, lineHeight: 1.1 }}>Welcome back</Typography>
+                <Typography color="text.secondary">Log in to continue</Typography>
+              </Stack>
+              <Stack component="form" spacing={2} onSubmit={submit}>
+                {error && <Alert severity="error">{error}</Alert>}
+                <TextField
+                  label="Username"
+                  autoFocus
+                  autoComplete="username"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                />
+                <TextField
+                  label="Password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                />
+                <Button type="submit" variant="contained" size="large" disabled={busy}>
+                  {busy ? 'Logging in…' : 'Log in'}
+                </Button>
+              </Stack>
             </Box>
-            <Typography sx={{ fontWeight: 600, fontSize: 36, letterSpacing: -1, lineHeight: 1.1 }}>Welcome back</Typography>
-            <Typography color="text.secondary">Log in to continue</Typography>
-          </Stack>
-          <Stack component="form" spacing={2} onSubmit={submit}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <TextField
-              label="Username"
-              autoFocus
-              autoComplete="username"
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
-            />
-            <TextField
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-            />
-            <Button type="submit" variant="contained" size="large" disabled={busy}>
-              {busy ? 'Logging in…' : 'Log in'}
-            </Button>
-          </Stack>
           </Box>
+          <Footer />
         </Box>
       </Box>
     </Box>

@@ -28,6 +28,18 @@ export function calcItemPrice({ net_weight_g, wastage_g = 0, making_charge = 0 }
   return { billed_weight_g, gold_value, making_charge: Number(making_charge), line_total: round2(gold_value + Number(making_charge)) };
 }
 
+// Selling range for one unit at a given gram price:
+//   final = gold value + making (the floor), min = final + min %, max = final + max %.
+// Being percentages, min and max follow the gold price automatically.
+export function calcPriceRange(item, gramPrice) {
+  const final = calcItemPrice(item, gramPrice).line_total;
+  return {
+    final,
+    min: round2(final * (1 + Number(item.price_min_percent || 0) / 100)),
+    max: round2(final * (1 + Number(item.price_max_percent || 0) / 100)),
+  };
+}
+
 // Pound price of another karat derived from a base karat by purity (e.g. 22K from 24K).
 export function poundByPurity(basePoundPrice, basePurity, targetPurity) {
   return Math.round((basePoundPrice * targetPurity) / basePurity);

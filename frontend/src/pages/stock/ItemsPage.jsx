@@ -8,6 +8,7 @@ import EditIcon from '@mui/icons-material/EditOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import LabelIcon from '@mui/icons-material/LocalOfferOutlined';
+import StockIcon from '@mui/icons-material/Inventory2Outlined';
 import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -17,7 +18,9 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { formatAmount, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
 import ItemFormDialog from './ItemFormDialog';
+import PriceRange from '../../components/PriceRange';
 import PrintTagsDialog from '../tags/PrintTagsDialog';
+import StockDialog from './StockDialog';
 
 const STATUS = {
   in_stock: { label: 'In stock', color: 'success' },
@@ -42,6 +45,7 @@ export default function ItemsPage() {
   const [editing, setEditing] = useState(null); // {} = new
   const [deleting, setDeleting] = useState(null);
   const [printing, setPrinting] = useState(null); // items to print
+  const [stockItem, setStockItem] = useState(null); // item whose Stock window is open
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -211,9 +215,11 @@ export default function ItemsPage() {
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{Number(i.wastage_g) ? formatWeight(i.wastage_g) : '—'}</TableCell>
                   <TableCell align="right">{Number(i.making_charge) ? formatMoney(i.making_charge) : '—'}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {i.price_now === null ? <Typography variant="caption" color="text.secondary">No gold price</Typography> : formatMoney(i.price_now)}
+                    <PriceRange item={i} />
                   </TableCell>
-                  <TableCell align="right">{i.stock_qty}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600, color: i.stock_qty === 0 && i.status === 'in_stock' ? 'error.main' : undefined }}>
+                    {i.stock_qty}
+                  </TableCell>
                   <TableCell>
                     <Chip size="small" variant="outlined" label={STATUS[i.status].label} color={STATUS[i.status].color} />
                     {i.tag_print_count === 0 && i.status === 'in_stock' && (
@@ -221,6 +227,9 @@ export default function ItemsPage() {
                     )}
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    <Tooltip title={can('items.adjust_stock') ? 'Add / take out stock · history' : 'Stock history'}>
+                      <IconButton size="small" onClick={() => setStockItem(i)}><StockIcon fontSize="small" /></IconButton>
+                    </Tooltip>
                     {canPrint && (
                       <Tooltip title="Print tag"><IconButton size="small" onClick={() => setPrinting([i])}><LabelIcon fontSize="small" /></IconButton></Tooltip>
                     )}
@@ -267,6 +276,7 @@ export default function ItemsPage() {
           }}
         />
       )}
+      {stockItem && <StockDialog item={stockItem} onClose={() => setStockItem(null)} onChanged={load} />}
       {printing && (
         <PrintTagsDialog items={printing} onClose={() => setPrinting(null)} onPrinted={() => { setSelected(new Map()); load(); }} />
       )}

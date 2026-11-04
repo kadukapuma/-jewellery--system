@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calcItemPrice, gramFromPound, percentChange, poundByPurity } from '../src/services/pricing.js';
+import { calcItemPrice, calcPriceRange, gramFromPound, percentChange, poundByPurity } from '../src/services/pricing.js';
 
 test('pound price is divided by 8 for the gram price', () => {
   assert.equal(gramFromPound(100000), 12500);
@@ -53,4 +53,12 @@ test('instalment schedule splits evenly, last takes the rounding', async () => {
   assert.equal(rows[1].due_date, '2026-02-28');
   assert.equal(rows[2].due_date, '2026-03-31');
   assert.equal(buildSchedule(1000, 2, 'weekly', '2026-11-04')[1].due_date, '2026-11-11');
+});
+
+test('price range is a percentage of the final price and follows the gold price', () => {
+  const ring = { net_weight_g: 7, wastage_g: 1, making_charge: 5000, price_min_percent: 5, price_max_percent: 20 };
+  assert.deepEqual(calcPriceRange(ring, 12500), { final: 105000, min: 110250, max: 126000 });
+  assert.deepEqual(calcPriceRange(ring, 13000), { final: 109000, min: 114450, max: 130800 });
+  assert.deepEqual(calcPriceRange({ net_weight_g: 7 }, 10000), { final: 70000, min: 70000, max: 70000 });
+  assert.equal(calcPriceRange({ net_weight_g: 1, price_max_percent: 12.5 }, 3333).max, 3749.63); // 3749.625
 });

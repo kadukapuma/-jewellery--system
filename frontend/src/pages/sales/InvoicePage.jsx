@@ -167,7 +167,8 @@ export default function InvoicePage() {
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{formatWeight(l.billed_weight_g)}</TableCell>
                 <TableCell align="right">{formatMoney(l.gold_value)}</TableCell>
                 <TableCell align="right">{Number(l.making_charge) ? formatMoney(l.making_charge) : '—'}</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(l.line_total)}</TableCell>
+                {/* Listed at the max price; any discount is shown once under the subtotal. */}
+                <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(Number(l.price_max) || l.line_total)}</TableCell>
               </TableRow>
             ))}
             <TableRow>

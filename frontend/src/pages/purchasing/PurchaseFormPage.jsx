@@ -12,14 +12,15 @@ import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import { formatMoney } from '../../utils/format';
-import { formatWeight } from '../../utils/pricing';
+import { calcItemPrice, formatWeight } from '../../utils/pricing';
+import PriceRangeFields, { priceRangeErrors } from '../../components/PriceRangeFields';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { gold, stone } from '../../theme';
 
 let nextKey = 1;
 const newLine = () => ({
   key: nextKey++, mode: 'new', name: '', item_code: '', category_id: '', karat_id: '', net_weight_g: '', wastage_g: '',
-  making_charge: '', qty: 1, purchase_price: '', lookup: '', item: null,
+  making_charge: '', price_min_percent: 0, price_max_percent: 0, qty: 1, purchase_price: '', lookup: '', item: null,
 });
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -40,6 +41,7 @@ export default function PurchaseFormPage() {
   const [head, setHead] = useState({ supplier_id: '', purchase_date: todayYmd(), supplier_invoice_no: '', notes: '' });
   const [lines, setLines] = useState([newLine()]);
   const [payment, setPayment] = useState({ amount: '', method: 'cash', reference_no: '' });
+  const [goldPrices, setGoldPrices] = useState([]);
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -52,7 +54,15 @@ export default function PurchaseFormPage() {
         setKarats(k.data.filter((x) => x.is_active));
       })
       .catch((err) => setError(errorMessage(err)));
-  }, []);
+    if (can('gold_prices.view')) api.get('/gold-prices/current').then((res) => setGoldPrices(res.data.prices)).catch(() => {});
+  }, [can]);
+
+  // Final price of one unit of a new line at today's gold rate (null until it can be worked out).
+  const lineFinal = (l) => {
+    const gram = goldPrices.find((p) => p.karat_id === l.karat_id)?.gram_price ?? null;
+    if (gram === null || !(Number(l.net_weight_g) > 0)) return null;
+    return calcItemPrice({ net_weight_g: l.net_weight_g, wastage_g: l.wastage_g, making_charge: l.making_charge }, gram).line_total;
+  };
 
   const supplier = suppliers.find((s) => s.id === head.supplier_id);
   const totalWeight = round3(lines.reduce((s, l) => s + lineWeight(l), 0));
@@ -90,6 +100,8 @@ export default function PurchaseFormPage() {
         if (!l.category_id) e[`lines.${i}.category_id`] = 'Required';
         if (!l.karat_id) e[`lines.${i}.karat_id`] = 'Required';
         if (!(Number(l.net_weight_g) > 0)) e[`lines.${i}.net_weight_g`] = 'Above 0';
+        const range = priceRangeErrors(l.price_min_percent, l.price_max_percent);
+        Object.entries(range).forEach(([k, v]) => { e[`lines.${i}.${k}`] = v; });
       }
       if (!Number.isInteger(Number(l.qty)) || Number(l.qty) < 1) e[`lines.${i}.qty`] = 'At least 1';
       if (!(Number(l.purchase_price) > 0)) e[`lines.${i}.purchase_price`] = 'Above 0';
@@ -114,6 +126,7 @@ export default function PurchaseFormPage() {
         : {
           name: l.name, item_code: l.item_code, category_id: l.category_id, karat_id: l.karat_id,
           net_weight_g: Number(l.net_weight_g), wastage_g: Number(l.wastage_g) || 0, making_charge: Number(l.making_charge) || 0,
+          price_min_percent: l.price_min_percent, price_max_percent: l.price_max_percent,
           qty: Number(l.qty), purchase_price: Number(l.purchase_price),
         })),
       payment: paidNow > 0 ? { ...payment, amount: paidNow } : null,
@@ -248,6 +261,27 @@ export default function PurchaseFormPage() {
               <Grid size={{ xs: 6, md: 2 }}>
                 {lineField(i, 'purchase_price', 'Price paid (line total)', { required: true, type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
               </Grid>
+              {l.mode === 'new' && (
+                <Grid size={{ xs: 12 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 2, alignItems: 'start', pt: 1, borderTop: `1px dashed ${stone[200]}` }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>Selling price (each)</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {lineFinal(l) !== null ? `Final price today ${formatMoney(lineFinal(l))}` : 'Final price shows once karat, weight and gold price are known'}
+                      </Typography>
+                    </Box>
+                    <PriceRangeFields
+                      row
+                      final={lineFinal(l)}
+                      minPercent={l.price_min_percent}
+                      maxPercent={l.price_max_percent}
+                      onChange={(field, markup) => setLine(i, { [field]: markup })}
+                      errors={{ price_min_percent: err(`lines.${i}.price_min_percent`), price_max_percent: err(`lines.${i}.price_max_percent`) }}
+                      cost={Number(l.purchase_price) > 0 && Number(l.qty) > 0 ? Number(l.purchase_price) / Number(l.qty) : null}
+                    />
+                  </Box>
+                </Grid>
+              )}
             </Grid>
           </Card>
         );

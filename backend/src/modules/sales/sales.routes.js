@@ -6,7 +6,7 @@ import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, idSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
-import { calcItemPrice } from '../../services/pricing.js';
+import { calcItemPrice, calcPriceRange } from '../../services/pricing.js';
 import { getCurrentPrice } from '../gold-prices/gold-prices.service.js';
 import { findCustomer } from '../customers/customers.routes.js';
 import {
@@ -21,9 +21,15 @@ const round3 = (n) => Math.round(n * 1000) / 1000;
 const createSchema = z.object({
   customer_id: z.coerce.number().int().positive().optional().nullable(),
   lines: z
-    .array(z.object({ item_id: idSchema, qty: z.coerce.number().int('Whole number only').min(1).max(100000).default(1) }))
+    .array(z.object({
+      item_id: idSchema,
+      qty: z.coerce.number().int('Whole number only').min(1).max(100000).default(1),
+      // Price for ONE unit. Leave out to sell at the item's max price.
+      unit_price: z.coerce.number().positive('Price must be above 0').max(1e12).optional().nullable(),
+    }))
     .min(1, 'Add at least one item')
     .max(100),
+  // Extra discount on the whole bill - Admin only, because it can go below the min prices.
   discount: z.coerce.number().min(0, 'Cannot be negative').max(1e12).default(0),
   payments: z
     .array(z.object({
@@ -140,7 +146,7 @@ router.get('/:id', requirePermission('sales.view', 'sales.reprint'), async (req,
 // is stored on the line so the bill never changes when the price is updated later.
 router.post('/', requirePermission('sales.create'), async (req, res) => {
   const data = createSchema.parse(req.body);
-  if (data.discount > 0 && !hasPermission(req, 'sales.discount')) throw new HttpError(403, 'You do not have permission to give discounts');
+  if (data.discount > 0 && !req.user.is_super_admin) throw new HttpError(403, 'Only an Admin can give a discount on the whole bill');
   const ids = data.lines.map((l) => l.item_id);
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'The same item is on the bill twice');
 
@@ -165,6 +171,20 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       if (!price) throw new HttpError(400, `No gold price entered for ${item.karat_name}. Update gold prices first.`);
 
       const unit = calcItemPrice(item, Number(price.gram_price));
+      const range = calcPriceRange(item, Number(price.gram_price));
+
+      // Selling price: the max price unless lowered. Discount permission goes down to the min price;
+      // only an Admin can go below the min price. Nobody goes above the max price.
+      const sold = line.unit_price ?? range.max;
+      const fmt = (n) => n.toFixed(2);
+      if (sold > range.max + 0.009) throw new HttpError(400, `${item.item_code}: price cannot be above the max price ${fmt(range.max)}`);
+      if (sold < range.max - 0.009 && !hasPermission(req, 'sales.discount')) {
+        throw new HttpError(403, `You cannot give discounts. Sell ${item.item_code} at ${fmt(range.max)}.`);
+      }
+      if (sold < range.min - 0.009 && !req.user.is_super_admin) {
+        throw new HttpError(403, `${item.item_code}: the lowest price is ${fmt(range.min)}. Only an Admin can go lower.`);
+      }
+
       lines.push({
         item,
         qty: line.qty,
@@ -175,15 +195,22 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
         wastage_g: round3(Number(item.wastage_g) * line.qty),
         billed_weight_g: round3(unit.billed_weight_g * line.qty),
         gold_value: round2(unit.gold_value * line.qty),
-        making_charge: round2(unit.making_charge * line.qty),
-        line_total: round2(unit.line_total * line.qty),
+        // The shop's margin above the final price is shown as part of the making charge,
+        // so gold value + making = the max price printed on the bill.
+        making_charge: round2((range.max - unit.gold_value) * line.qty),
+        price_final: round2(range.final * line.qty),
+        price_min: round2(range.min * line.qty),
+        price_max: round2(range.max * line.qty),
+        line_total: round2(sold * line.qty),
       });
     }
 
-    // 2. Totals.
-    const subtotal = round2(lines.reduce((s, l) => s + l.line_total, 0));
-    if (data.discount > subtotal) throw new HttpError(400, 'Discount cannot be more than the bill');
-    const total = round2(subtotal - data.discount);
+    // 2. Totals: subtotal at max prices, discount = what was taken off the lines + any Admin bill discount.
+    const subtotal = round2(lines.reduce((s, l) => s + l.price_max, 0));
+    const afterLines = round2(lines.reduce((s, l) => s + l.line_total, 0));
+    if (data.discount > afterLines) throw new HttpError(400, 'Discount cannot be more than the bill');
+    const total = round2(afterLines - data.discount);
+    const discount = round2(subtotal - total);
     if (data.expected_total !== null && data.expected_total !== undefined && Math.abs(data.expected_total - total) > 0.009) {
       throw new HttpError(409, `The gold price changed while you were billing. New total is ${total.toFixed(2)} — please check and save again.`, 'PRICE_CHANGED');
     }
@@ -220,17 +247,19 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
     const [saleResult] = await conn.query(
       `INSERT INTO sales (invoice_no, customer_id, sale_date, subtotal, discount, total, paid_amount, balance, payment_status, due_date, status, created_by)
        VALUES (?, ?, NOW(), ?, ?, ?, 0, ?, 'unpaid', ?, 'completed', ?)`,
-      [invoiceNo, customer?.id ?? null, subtotal, data.discount, total, total, balance > 0 ? data.due_date ?? null : null, req.user.id],
+      [invoiceNo, customer?.id ?? null, subtotal, discount, total, total, balance > 0 ? data.due_date ?? null : null, req.user.id],
     );
     const saleId = saleResult.insertId;
 
     for (const l of lines) {
       await conn.query(
         `INSERT INTO sale_lines (sale_id, item_id, karat_id, gold_price_id, qty, net_weight_g, wastage_g, billed_weight_g,
-                                 pound_price_used, gram_price_used, gold_value, making_charge, line_total, unit_cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                 pound_price_used, gram_price_used, gold_value, making_charge, line_total,
+                                 price_final, price_min, price_max, unit_cost)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [saleId, l.item.id, l.item.karat_id, l.gold_price_id, l.qty, l.net_weight_g, l.wastage_g, l.billed_weight_g,
-          l.pound_price_used, l.gram_price_used, l.gold_value, l.making_charge, l.line_total, Number(l.item.cost_price)],
+          l.pound_price_used, l.gram_price_used, l.gold_value, l.making_charge, l.line_total,
+          l.price_final, l.price_min, l.price_max, Number(l.item.cost_price)],
       );
       await conn.query(
         "UPDATE items SET stock_qty = stock_qty - ?, status = IF(stock_qty = 0, 'sold', status) WHERE id = ?",
@@ -275,7 +304,10 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       action: 'create',
       table: 'sales',
       recordId: saleId,
-      newValues: { invoice_no: invoiceNo, customer_id: customer?.id ?? null, total, discount: data.discount, paid, change, lines: lines.length },
+      newValues: {
+        invoice_no: invoiceNo, customer_id: customer?.id ?? null, total, discount, bill_discount: data.discount, paid, change,
+        lines: lines.map((l) => ({ item: l.item.item_code, min: l.price_min, max: l.price_max, sold: l.line_total })),
+      },
     });
     return { saleId, change };
   });

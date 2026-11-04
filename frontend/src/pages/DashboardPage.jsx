@@ -1,45 +1,37 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Button, Grid, Skeleton, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography,
+  Alert, Box, Button, Grid, Skeleton, Typography,
 } from '@mui/material';
-import GroupsIcon from '@mui/icons-material/GroupsOutlined';
-import HistoryIcon from '@mui/icons-material/HistoryOutlined';
-import PersonIcon from '@mui/icons-material/PersonOutlined';
+import InventoryIcon from '@mui/icons-material/Inventory2Outlined';
+import PurchaseIcon from '@mui/icons-material/ShoppingBagOutlined';
+import WorkshopIcon from '@mui/icons-material/HandymanOutlined';
+import CustomerIcon from '@mui/icons-material/GroupOutlined';
 import api, { errorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useNotify } from '../components/Notify';
 import StatCard from '../components/StatCard';
 import SectionCard from '../components/SectionCard';
-import LoginActivityCard from './dashboard/LoginActivityCard';
-import { formatAmount, formatDateTime, formatMoney } from '../utils/format';
-import { gold } from '../theme';
+import BarChart from '../components/BarChart';
+import { formatAmount, formatMoney } from '../utils/format';
 
 const PRICE_TONES = ['gold', 'light', 'gray'];
 
-function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-}
-
 export default function DashboardPage() {
-  const { user, can } = useAuth();
+  const { can } = useAuth();
   const notify = useNotify();
   const navigate = useNavigate();
-  const [days, setDays] = useState(14);
   const [data, setData] = useState(null);
 
   useEffect(() => {
     let active = true;
     api
-      .get('/dashboard', { params: { days } })
+      .get('/dashboard')
       .then((res) => active && setData(res.data))
       .catch((err) => active && notify(errorMessage(err), 'error'));
     return () => { active = false; };
-  }, [days, notify]);
+  }, [notify]);
 
-  const firstName = user.name.split(' ')[0];
-  const hasStats = data && (data.users || data.logins);
   const prices = data?.gold_prices?.prices || [];
   const missingToday = prices.filter((p) => !p.is_today);
 
@@ -54,18 +46,13 @@ export default function DashboardPage() {
       to="/gold-prices"
     />
   ));
-  const adminCards = [
-    data?.users && (
-      <StatCard key="users" tone="gold" label="Active users" note={`${data.users.total} accounts in total`} value={data.users.active} to="/users" />
-    ),
-    data?.logins && (
-      <StatCard key="logins" tone="light" label="Logins today" note="Successful sign-ins" value={data.logins.today_success} to="/activity" />
-    ),
-    data?.logins && (
-      <StatCard key="failed" tone="gray" label="Failed logins" note="Wrong password or locked" value={data.logins.today_failed} unit="today" to="/activity" />
-    ),
-  ].filter(Boolean);
   const sales = data?.sales;
+  const salesChart = (sales?.daily || []).map((day) => ({
+    key: day.day,
+    label: new Date(`${day.day}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' }),
+    value: day.amount,
+    detail: `${day.bills} bill(s)`,
+  }));
   const salesCards = sales ? [
     <StatCard key="sales-today" tone="gold" label="Sales today" note={`${sales.today_bills} bill(s) · ${formatAmount(Math.round(sales.today_paid))} received`}
       value={formatAmount(Math.round(sales.today_amount))} to="/sales" />,
@@ -74,8 +61,25 @@ export default function DashboardPage() {
     <StatCard key="overdue" tone="gray" label="Overdue" note="Past the due date"
       value={formatAmount(Math.round(sales.overdue_amount))} to="/sales" />,
   ] : [];
-  // Gold prices lead the dashboard, then sales, then admin numbers - each in its own row.
-  const [topCards = [], ...otherRows] = [priceCards, salesCards, adminCards].filter((row) => row.length);
+  const businessCards = [
+    data?.inventory && (
+      <StatCard key="inventory" tone="gold" label="Items in stock"
+        note={`${formatAmount(data.inventory.weight_g)} g · ${formatAmount(data.inventory.with_craftsman)} with craftsman`}
+        value={formatAmount(data.inventory.item_count)} to="/items" />
+    ),
+    data?.purchases && (
+      <StatCard key="purchases" tone="light" label="Supplier balance"
+        note={`${data.purchases.pending_count} unpaid purchase(s)`}
+        value={formatAmount(Math.round(data.purchases.pending_amount))} to="/purchases" />
+    ),
+    data?.workshop && (
+      <StatCard key="workshop" tone="gray" label="Workshop workload"
+        note={`${formatAmount(data.workshop.issued_weight_g)} g issued · ${data.workshop.completed_today} completed today`}
+        value={formatAmount(data.workshop.active_jobs)} to="/craft-jobs" />
+    ),
+  ].filter(Boolean);
+  const [topCards = []] = [priceCards].filter((row) => row.length);
+  const businessSummaryCards = [...salesCards, ...businessCards];
 
   return (
     <>
@@ -83,9 +87,9 @@ export default function DashboardPage() {
         <Grid size={{ xs: 12, xl: 3 }} sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: { xs: 34, md: 44, xl: 46 }, fontWeight: 600, letterSpacing: { xs: -1, xl: -2 }, lineHeight: 1.05, overflowWrap: 'break-word' }}>
-              {greeting()},<br />{firstName}
+              Business<br />overview
             </Typography>
-            <Typography color="text.secondary" sx={{ mt: 1 }}>{user.role_name} · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</Typography>
+            <Typography color="text.secondary" sx={{ mt: 1 }}>Your jewellery business at a glance · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</Typography>
           </Box>
         </Grid>
 
@@ -107,71 +111,58 @@ export default function DashboardPage() {
         </Alert>
       )}
 
-      {otherRows.map((row) => (
-        <Grid key={row[0].key} container spacing={2.5} sx={{ mb: 3 }}>
-          {row.map((card) => (
-            <Grid key={card.key} size={{ xs: 12, sm: 4 }}>{card}</Grid>
+      {businessSummaryCards.length > 0 && (
+        <Grid container spacing={2.5} sx={{ mb: 3 }}>
+          {businessSummaryCards.map((card) => (
+            <Grid key={card.key} size={{ xs: 12, sm: 4, xl: 2 }}>{card}</Grid>
           ))}
         </Grid>
-      ))}
+      )}
 
-      {hasStats && (
-        <Grid container spacing={2.5}>
-          {data.logins && (
-            <Grid size={{ xs: 12, lg: 7 }}>
-              <LoginActivityCard logins={data.logins} days={days} onDaysChange={setDays} />
-            </Grid>
-          )}
-          <Grid size={{ xs: 12, lg: data.logins ? 5 : 12 }}>
-            <Stack spacing={2.5}>
-              {data.users && (
-                <SectionCard icon={<GroupsIcon fontSize="small" />} title="Users by role" to="/roles">
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(76px, 1fr))', gap: 1 }}>
-                    {data.users.by_role.map((r) => (
-                      <Box key={r.role} sx={{ textAlign: 'center' }}>
-                        <Box sx={{ width: 56, height: 56, mx: 'auto', borderRadius: '50%', bgcolor: gold[100], color: gold[700], display: 'grid', placeItems: 'center' }}>
-                          <PersonIcon />
-                        </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{r.role}</Typography>
-                        <Typography sx={{ fontWeight: 600 }}>{r.count}</Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                </SectionCard>
-              )}
-              {data.recent_activity && (
-                <SectionCard icon={<HistoryIcon fontSize="small" />} title="Recent activity" to="/activity">
-                  <Box sx={{ overflowX: 'auto' }}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Time</TableCell>
-                          <TableCell>User</TableCell>
-                          <TableCell>Action</TableCell>
-                          <TableCell>Record</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {data.recent_activity.map((a) => (
-                          <TableRow key={a.id}>
-                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(a.created_at)}</TableCell>
-                            <TableCell>{a.user_name}</TableCell>
-                            <TableCell sx={{ textTransform: 'capitalize' }}>{a.action.replace(/_/g, ' ')}</TableCell>
-                            <TableCell>{a.table_name}{a.record_id ? ` #${a.record_id}` : ''}</TableCell>
-                          </TableRow>
-                        ))}
-                        {!data.recent_activity.length && (
-                          <TableRow><TableCell colSpan={4} align="center" sx={{ color: 'text.secondary' }}>Nothing yet</TableCell></TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </Box>
-                </SectionCard>
-              )}
-            </Stack>
+      {sales && (
+        <Grid container spacing={2.5} sx={{ mb: 3 }}>
+          <Grid size={{ xs: 12 }}>
+            <SectionCard title="Sales performance · last 7 days" to="/reports">
+              <BarChart data={salesChart} format={(value) => formatAmount(Math.round(value))} height={180} />
+            </SectionCard>
           </Grid>
         </Grid>
       )}
+
+      <Grid container spacing={2.5}>
+        {data?.inventory && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <SectionCard icon={<InventoryIcon fontSize="small" />} title="Inventory value" to="/items">
+              <Typography sx={{ fontSize: 32, fontWeight: 600 }}>{formatAmount(Math.round(data.inventory.value))}</Typography>
+              <Typography color="text.secondary" variant="body2">Estimated cost value of current stock</Typography>
+            </SectionCard>
+          </Grid>
+        )}
+        {data?.purchases && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <SectionCard icon={<PurchaseIcon fontSize="small" />} title="Purchasing commitments" to="/purchases">
+              <Typography sx={{ fontSize: 32, fontWeight: 600 }}>{formatAmount(data.purchases.pending_weight_g)} g</Typography>
+              <Typography color="text.secondary" variant="body2">{formatMoney(data.purchases.pending_amount)} still payable to suppliers</Typography>
+            </SectionCard>
+          </Grid>
+        )}
+        {data?.workshop && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <SectionCard icon={<WorkshopIcon fontSize="small" />} title="Workshop progress" to="/craft-jobs">
+              <Typography sx={{ fontSize: 32, fontWeight: 600 }}>{data.workshop.active_jobs} active jobs</Typography>
+              <Typography color="text.secondary" variant="body2">{data.workshop.completed_today} job(s) completed today</Typography>
+            </SectionCard>
+          </Grid>
+        )}
+        {data?.customers && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <SectionCard icon={<CustomerIcon fontSize="small" />} title="Customer base" to="/customers">
+              <Typography sx={{ fontSize: 32, fontWeight: 600 }}>{data.customers.total} customers</Typography>
+              <Typography color="text.secondary" variant="body2">Opening receivables: {formatAmount(data.customers.opening_balance)}</Typography>
+            </SectionCard>
+          </Grid>
+        )}
+      </Grid>
     </>
   );
 }

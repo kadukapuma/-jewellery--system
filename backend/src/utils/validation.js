@@ -33,3 +33,15 @@ export const dateSchema = z
   .refine((v) => !Number.isNaN(new Date(v).getTime()), 'Use a valid date');
 
 export const PAYMENT_METHODS = ['cash', 'card', 'bank_transfer', 'cheque'];
+
+// Selling range of an item, as % above its final price (gold value + making). 0% = the final price.
+export const priceRangeFields = {
+  price_min_percent: z.coerce.number().min(0, 'Min price cannot be below the final price (0%)').max(1000, 'At most 1000%').default(0),
+  price_max_percent: z.coerce.number().min(0, 'Max price cannot be below the final price (0%)').max(1000, 'At most 1000%').default(0),
+};
+
+export function checkPriceRange(data, ctx, path = []) {
+  if (data.price_max_percent < data.price_min_percent) {
+    ctx.addIssue({ code: 'custom', path: [...path, 'price_max_percent'], message: 'Max price cannot be below the min price' });
+  }
+}

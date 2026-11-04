@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useNotify } from '../components/Notify';
 import api, { errorMessage, fieldErrors } from '../api/client';
 import { PASSWORD_HINT, passwordProblem } from '../utils/validation';
+import Footer from '../components/Footer';
 
 export default function ChangePasswordPage() {
   const { user, setUser, logout } = useAuth();
@@ -44,35 +45,38 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', p: 2 }}>
-      <Card sx={{ width: '100%', maxWidth: 420 }}>
-        <CardContent sx={{ p: 4 }}>
-          <Typography variant="h5" sx={{ fontWeight: 700 }} gutterBottom>Change password</Typography>
-          {user.must_change_password && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Please set a new password before you continue.
-            </Alert>
-          )}
-          <Stack component="form" spacing={2} onSubmit={submit}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <TextField label="Current password" type="password" autoComplete="current-password"
-              value={form.current_password} onChange={set('current_password')}
-              error={!!errors.current_password} helperText={errors.current_password} />
-            <TextField label="New password" type="password" autoComplete="new-password"
-              value={form.new_password} onChange={set('new_password')}
-              error={!!errors.new_password} helperText={errors.new_password || PASSWORD_HINT} />
-            <TextField label="Confirm new password" type="password" autoComplete="new-password"
-              value={form.confirm} onChange={set('confirm')}
-              error={!!errors.confirm} helperText={errors.confirm} />
-            <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
-              {user.must_change_password
-                ? <Button onClick={logout}>Log out</Button>
-                : <Button onClick={() => navigate(-1)}>Cancel</Button>}
-              <Button type="submit" variant="contained" disabled={busy}>Save password</Button>
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', p: 2 }}>
+      <Box sx={{ flexGrow: 1, display: 'grid', placeItems: 'center' }}>
+        <Card sx={{ width: '100%', maxWidth: 420 }}>
+          <CardContent sx={{ p: 4 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700 }} gutterBottom>Change password</Typography>
+            {user.must_change_password && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Please set a new password before you continue.
+              </Alert>
+            )}
+            <Stack component="form" spacing={2} onSubmit={submit}>
+              {error && <Alert severity="error">{error}</Alert>}
+              <TextField label="Current password" type="password" autoComplete="current-password"
+                value={form.current_password} onChange={set('current_password')}
+                error={!!errors.current_password} helperText={errors.current_password} />
+              <TextField label="New password" type="password" autoComplete="new-password"
+                value={form.new_password} onChange={set('new_password')}
+                error={!!errors.new_password} helperText={errors.new_password || PASSWORD_HINT} />
+              <TextField label="Confirm new password" type="password" autoComplete="new-password"
+                value={form.confirm} onChange={set('confirm')}
+                error={!!errors.confirm} helperText={errors.confirm} />
+              <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
+                {user.must_change_password
+                  ? <Button onClick={logout}>Log out</Button>
+                  : <Button onClick={() => navigate(-1)}>Cancel</Button>}
+                <Button type="submit" variant="contained" disabled={busy}>Save password</Button>
+              </Stack>
             </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </Box>
+      <Footer />
     </Box>
   );
 }

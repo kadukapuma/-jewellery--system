@@ -11,6 +11,7 @@ import GoldPricesPage from './pages/pricing/GoldPricesPage';
 import KaratsPage from './pages/pricing/KaratsPage';
 import ItemsPage from './pages/stock/ItemsPage';
 import CategoriesPage from './pages/stock/CategoriesPage';
+import StockMovementsPage from './pages/stock/StockMovementsPage';
 import TagTemplatesPage from './pages/tags/TagTemplatesPage';
 import SuppliersPage from './pages/purchasing/SuppliersPage';
 import PurchasesPage from './pages/purchasing/PurchasesPage';
@@ -38,7 +39,8 @@ export default function App() {
           <Route path="gold-prices" element={<RequirePermission perm="gold_prices.view"><GoldPricesPage /></RequirePermission>} />
           <Route path="karats" element={<RequirePermission perm="karats.view"><KaratsPage /></RequirePermission>} />
           <Route path="items" element={<RequirePermission perm="items.view"><ItemsPage /></RequirePermission>} />
-          <Route path="categories" element={<RequirePermission perm="categories.view"><CategoriesPage /></RequirePermission>} />
+          <Route path="stock-history" element={<RequirePermission perm="items.view"><StockMovementsPage /></RequirePermission>} />
+          <Route path="categories"element={<RequirePermission perm="categories.view"><CategoriesPage /></RequirePermission>} />
           <Route path="tag-templates" element={<RequirePermission perm="tag_templates.edit"><TagTemplatesPage /></RequirePermission>} />
           <Route path="suppliers" element={<RequirePermission perm="suppliers.view"><SuppliersPage /></RequirePermission>} />
           <Route path="purchases" element={<RequirePermission perm="purchases.view"><PurchasesPage /></RequirePermission>} />
