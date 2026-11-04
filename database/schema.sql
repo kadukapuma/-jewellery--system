@@ -1,0 +1,819 @@
+-- =====================================================================
+-- Jewellery Management System - MySQL 8 schema
+-- Weights: DECIMAL(10,3) grams | Money: DECIMAL(14,2)
+-- 1 pound (sovereign) = 8 grams  ->  gram_price = pound_price / 8
+-- =====================================================================
+
+CREATE DATABASE IF NOT EXISTS jewellery_system
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE jewellery_system;
+
+-- =====================================================================
+-- USER MANAGEMENT & PERMISSIONS (role-based + per-user overrides)
+--   Effective permissions of a user =
+--       permissions of their role
+--     + user_permissions where is_granted = 1   (extra access)
+--     - user_permissions where is_granted = 0   (blocked access)
+--   A role with is_super_admin = 1 gets every permission automatically.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1a. ROLES (Admin, Manager, Cashier, Stock Keeper ...)
+-- ---------------------------------------------------------------------
+CREATE TABLE roles (
+  id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name             VARCHAR(50)  NOT NULL UNIQUE,
+  description      VARCHAR(255) NULL,
+  is_super_admin   TINYINT(1) NOT NULL DEFAULT 0,       -- bypasses all checks
+  is_system        TINYINT(1) NOT NULL DEFAULT 0,       -- cannot be deleted
+  is_active        TINYINT(1) NOT NULL DEFAULT 1,
+  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 1b. PERMISSIONS (fixed list, seeded - one row per module + action)
+--     code = '<module>.<action>'  e.g. 'sales.create', 'gold_prices.update'
+-- ---------------------------------------------------------------------
+CREATE TABLE permissions (
+  id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code             VARCHAR(60)  NOT NULL UNIQUE,
+  module           VARCHAR(40)  NOT NULL,               -- grouping on the screen
+  action           VARCHAR(30)  NOT NULL,               -- view/create/edit/delete/...
+  description      VARCHAR(255) NULL,
+  sort_order       INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_perm_module_action (module, action)
+);
+
+-- ---------------------------------------------------------------------
+-- 1c. ROLE_PERMISSIONS (which role can do what)
+-- ---------------------------------------------------------------------
+CREATE TABLE role_permissions (
+  role_id          INT UNSIGNED NOT NULL,
+  permission_id    INT UNSIGNED NOT NULL,
+  PRIMARY KEY (role_id, permission_id),
+  CONSTRAINT fk_rp_role FOREIGN KEY (role_id)       REFERENCES roles(id)       ON DELETE CASCADE,
+  CONSTRAINT fk_rp_perm FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+);
+
+-- ---------------------------------------------------------------------
+-- 1d. USERS (who logs in and who entered what)
+-- ---------------------------------------------------------------------
+CREATE TABLE users (
+  id                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name                  VARCHAR(100) NOT NULL,
+  username              VARCHAR(50)  NOT NULL UNIQUE,
+  email                 VARCHAR(150) NULL UNIQUE,
+  phone                 VARCHAR(30)  NULL,
+  password_hash         VARCHAR(255) NOT NULL,          -- bcrypt
+  role_id               INT UNSIGNED NOT NULL,
+  is_active             TINYINT(1) NOT NULL DEFAULT 1,
+  must_change_password  TINYINT(1) NOT NULL DEFAULT 1,  -- force change on first login
+  failed_login_count    INT NOT NULL DEFAULT 0,
+  locked_until          DATETIME NULL,                  -- lock after too many failures
+  last_login_at         DATETIME NULL,
+  created_by            INT UNSIGNED NULL,
+  created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_user_role    FOREIGN KEY (role_id)    REFERENCES roles(id),
+  CONSTRAINT fk_user_creator FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- ---------------------------------------------------------------------
+-- 1e. USER_PERMISSIONS (per-user exceptions to their role)
+--     is_granted = 1 -> give this user an extra permission
+--     is_granted = 0 -> take this permission away from this user
+-- ---------------------------------------------------------------------
+CREATE TABLE user_permissions (
+  user_id          INT UNSIGNED NOT NULL,
+  permission_id    INT UNSIGNED NOT NULL,
+  is_granted       TINYINT(1) NOT NULL,
+  PRIMARY KEY (user_id, permission_id),
+  CONSTRAINT fk_up_user FOREIGN KEY (user_id)       REFERENCES users(id)       ON DELETE CASCADE,
+  CONSTRAINT fk_up_perm FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+);
+
+-- ---------------------------------------------------------------------
+-- 1f. LOGIN HISTORY (successful and failed logins)
+-- ---------------------------------------------------------------------
+CREATE TABLE login_logs (
+  id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id          INT UNSIGNED NULL,                   -- NULL if username not found
+  username_tried   VARCHAR(50) NOT NULL,
+  success          TINYINT(1) NOT NULL,
+  ip_address       VARCHAR(45) NULL,
+  user_agent       VARCHAR(255) NULL,
+  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ll_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_ll_user_time (user_id, created_at)
+);
+
+-- ---------------------------------------------------------------------
+-- 1g. AUDIT LOG (who changed what - prices, items, sales, users ...)
+-- ---------------------------------------------------------------------
+CREATE TABLE audit_logs (
+  id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id          INT UNSIGNED NOT NULL,
+  action           VARCHAR(30) NOT NULL,                -- create/update/delete/cancel/login
+  table_name       VARCHAR(50) NOT NULL,
+  record_id        INT UNSIGNED NULL,
+  old_values       JSON NULL,
+  new_values       JSON NULL,
+  ip_address       VARCHAR(45) NULL,
+  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_al_user FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_al_table_record (table_name, record_id),
+  INDEX idx_al_time (created_at)
+);
+
+-- ---------------------------------------------------------------------
+-- 2. SETTINGS (key/value, e.g. grams_per_pound = 8)
+-- ---------------------------------------------------------------------
+CREATE TABLE settings (
+  setting_key    VARCHAR(50) PRIMARY KEY,
+  setting_value  VARCHAR(255) NOT NULL,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 3. KARATS (admin-defined list: 24K, 22K, 21K, 18K ...)
+-- ---------------------------------------------------------------------
+CREATE TABLE karats (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(10)  NOT NULL UNIQUE,          -- '24K'
+  purity         DECIMAL(5,4) NOT NULL,                 -- 0.9990, 0.9160
+  sort_order     INT NOT NULL DEFAULT 0,
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 4. GOLD PRICES (daily price setup - history, never overwritten)
+--    Current price of a karat = latest effective_at row for that karat.
+-- ---------------------------------------------------------------------
+CREATE TABLE gold_prices (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  karat_id       INT UNSIGNED NOT NULL,
+  pound_price    DECIMAL(14,2) NOT NULL,                -- entered by admin: 100000.00
+  gram_price     DECIMAL(14,2) NOT NULL,                -- calculated: 12500.00
+  effective_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  entered_by     INT UNSIGNED NOT NULL,
+  notes          VARCHAR(255) NULL,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_gp_karat FOREIGN KEY (karat_id)   REFERENCES karats(id),
+  CONSTRAINT fk_gp_user  FOREIGN KEY (entered_by) REFERENCES users(id),
+  INDEX idx_gp_karat_time (karat_id, effective_at)
+);
+
+-- ---------------------------------------------------------------------
+-- 5. CATEGORIES (Rings, Chains, Bangles, Gold Biscuits ...)
+-- ---------------------------------------------------------------------
+CREATE TABLE categories (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(100) NOT NULL UNIQUE,
+  category_type  ENUM('jewellery','biscuit','other') NOT NULL DEFAULT 'jewellery',
+  description    VARCHAR(255) NULL,
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 6. SUPPLIERS
+-- ---------------------------------------------------------------------
+CREATE TABLE suppliers (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(150) NOT NULL,
+  phone          VARCHAR(30)  NULL,
+  email          VARCHAR(150) NULL,
+  address        VARCHAR(255) NULL,
+  opening_balance DECIMAL(14,2) NOT NULL DEFAULT 0,     -- what we owed them when the system started
+  credit_days    INT NOT NULL DEFAULT 0,                -- used to set purchases.due_date
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 7. CRAFTSMEN
+-- ---------------------------------------------------------------------
+CREATE TABLE craftsmen (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(150) NOT NULL,
+  phone          VARCHAR(30)  NULL,
+  address        VARCHAR(255) NULL,
+  opening_gold_g        DECIMAL(10,3) NOT NULL DEFAULT 0, -- gold they held when the system started
+  opening_cash_balance  DECIMAL(14,2) NOT NULL DEFAULT 0, -- fees we owed them (+) or advance given (-)
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 8. CUSTOMERS
+-- ---------------------------------------------------------------------
+CREATE TABLE customers (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(150) NOT NULL,
+  phone          VARCHAR(30)  NULL,
+  nic            VARCHAR(20)  NULL,
+  address        VARCHAR(255) NULL,
+  credit_limit   DECIMAL(14,2) NOT NULL DEFAULT 0,      -- 0 = no credit allowed
+  opening_balance DECIMAL(14,2) NOT NULL DEFAULT 0,     -- what they owed when the system started
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_customer_phone (phone)
+);
+
+-- ---------------------------------------------------------------------
+-- 9. ITEMS (item master - every piece / biscuit in stock)
+--    source = 'purchase' -> came from a supplier (wastage_g = 0)
+--    source = 'craft'    -> made by a craftsman (wastage_g from craft job)
+-- ---------------------------------------------------------------------
+CREATE TABLE items (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  item_code      VARCHAR(30)  NOT NULL UNIQUE,          -- shop code, e.g. RNG-000123
+  barcode        VARCHAR(50)  NOT NULL UNIQUE,          -- printed on the tag and scanned at POS
+  tag_print_count INT NOT NULL DEFAULT 0,
+  last_tag_printed_at DATETIME NULL,
+  name           VARCHAR(150) NOT NULL,
+  category_id    INT UNSIGNED NOT NULL,
+  karat_id       INT UNSIGNED NOT NULL,
+  source         ENUM('purchase','craft','opening') NOT NULL DEFAULT 'purchase',
+  net_weight_g   DECIMAL(10,3) NOT NULL,                -- actual weight of the piece (7.000)
+  wastage_g      DECIMAL(10,3) NOT NULL DEFAULT 0,      -- charged to customer (1.000)
+  making_charge  DECIMAL(14,2) NOT NULL DEFAULT 0,      -- labour charged to customer
+  cost_price     DECIMAL(14,2) NOT NULL DEFAULT 0,      -- what the shop paid (purchase or gold+labour)
+  stock_qty      INT NOT NULL DEFAULT 0,                -- 1 for single pieces, n for biscuits
+  status         ENUM('in_stock','sold','with_craftsman','inactive') NOT NULL DEFAULT 'in_stock',
+  description    VARCHAR(255) NULL,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_item_category FOREIGN KEY (category_id) REFERENCES categories(id),
+  CONSTRAINT fk_item_karat    FOREIGN KEY (karat_id)    REFERENCES karats(id),
+  INDEX idx_item_status (status)
+);
+
+-- ---------------------------------------------------------------------
+-- 10. PURCHASES (header) - buying gold items / biscuits from a supplier
+-- ---------------------------------------------------------------------
+CREATE TABLE purchases (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  purchase_no          VARCHAR(30) NOT NULL UNIQUE,     -- PUR-000001
+  supplier_id          INT UNSIGNED NOT NULL,
+  supplier_invoice_no  VARCHAR(50) NULL,
+  purchase_date        DATE NOT NULL,
+  total_weight_g       DECIMAL(12,3) NOT NULL DEFAULT 0,
+  total_amount         DECIMAL(14,2) NOT NULL DEFAULT 0,
+  paid_amount          DECIMAL(14,2) NOT NULL DEFAULT 0,  -- = SUM(supplier_payment_allocations)
+  balance              DECIMAL(14,2) NOT NULL DEFAULT 0,  -- total_amount - paid_amount
+  payment_status       ENUM('unpaid','partial','paid') NOT NULL DEFAULT 'unpaid',
+  due_date             DATE NULL,                         -- purchase_date + supplier credit_days
+  notes                VARCHAR(255) NULL,
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pur_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  CONSTRAINT fk_pur_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  INDEX idx_pur_date (purchase_date)
+);
+
+-- ---------------------------------------------------------------------
+-- 11. PURCHASE LINES - purchase price entered per line
+-- ---------------------------------------------------------------------
+CREATE TABLE purchase_lines (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  purchase_id          INT UNSIGNED NOT NULL,
+  item_id              INT UNSIGNED NOT NULL,           -- item created/selected at entry
+  karat_id             INT UNSIGNED NOT NULL,
+  qty                  INT NOT NULL DEFAULT 1,
+  weight_g             DECIMAL(10,3) NOT NULL,          -- total weight of this line
+  purchase_price       DECIMAL(14,2) NOT NULL,          -- total paid for this line
+  price_per_gram       DECIMAL(14,2) NOT NULL,          -- purchase_price / weight_g
+  CONSTRAINT fk_pl_purchase FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pl_item     FOREIGN KEY (item_id)     REFERENCES items(id),
+  CONSTRAINT fk_pl_karat    FOREIGN KEY (karat_id)    REFERENCES karats(id)
+);
+
+-- ---------------------------------------------------------------------
+-- 12. CRAFT JOBS - gold issued to a craftsman, finished item returned
+--     wastage_g = issued_weight_g - returned_weight_g
+--     Customer is billed for issued_weight_g (net + wastage) + making_charge
+-- ---------------------------------------------------------------------
+CREATE TABLE craft_jobs (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job_no               VARCHAR(30) NOT NULL UNIQUE,     -- JOB-000001
+  craftsman_id         INT UNSIGNED NOT NULL,
+  category_id          INT UNSIGNED NOT NULL,           -- what is being made (Ring)
+  karat_id             INT UNSIGNED NOT NULL,
+  customer_id          INT UNSIGNED NULL,               -- set for customer orders
+  source_item_id       INT UNSIGNED NULL,               -- biscuit/old gold taken from stock
+  description          VARCHAR(255) NULL,
+  issued_weight_g      DECIMAL(10,3) NOT NULL,          -- 8.000
+  issue_date           DATE NOT NULL,
+  returned_weight_g    DECIMAL(10,3) NULL,              -- 7.000 (on completion)
+  wastage_g            DECIMAL(10,3) NULL,              -- 1.000 (calculated)
+  making_charge        DECIMAL(14,2) NOT NULL DEFAULT 0,-- charged to customer
+  craftsman_fee        DECIMAL(14,2) NOT NULL DEFAULT 0,-- earned by craftsman (added to their account on completion)
+  completed_date       DATE NULL,
+  status               ENUM('issued','completed','cancelled') NOT NULL DEFAULT 'issued',
+  item_id              INT UNSIGNED NULL,               -- finished item created on completion
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cj_craftsman FOREIGN KEY (craftsman_id)   REFERENCES craftsmen(id),
+  CONSTRAINT fk_cj_category  FOREIGN KEY (category_id)    REFERENCES categories(id),
+  CONSTRAINT fk_cj_karat     FOREIGN KEY (karat_id)       REFERENCES karats(id),
+  CONSTRAINT fk_cj_customer  FOREIGN KEY (customer_id)    REFERENCES customers(id),
+  CONSTRAINT fk_cj_source    FOREIGN KEY (source_item_id) REFERENCES items(id),
+  CONSTRAINT fk_cj_item      FOREIGN KEY (item_id)        REFERENCES items(id),
+  CONSTRAINT fk_cj_user      FOREIGN KEY (created_by)     REFERENCES users(id),
+  CONSTRAINT chk_cj_returned CHECK (returned_weight_g IS NULL OR returned_weight_g <= issued_weight_g),
+  INDEX idx_cj_status (status)
+);
+
+-- ---------------------------------------------------------------------
+-- 13. SALES (invoice header)
+-- ---------------------------------------------------------------------
+CREATE TABLE sales (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  invoice_no           VARCHAR(30) NOT NULL UNIQUE,     -- INV-000001
+  customer_id          INT UNSIGNED NULL,               -- NULL = walk-in
+  sale_date            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  subtotal             DECIMAL(14,2) NOT NULL,
+  discount             DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total                DECIMAL(14,2) NOT NULL,
+  paid_amount          DECIMAL(14,2) NOT NULL DEFAULT 0,  -- = SUM(customer_payment_allocations)
+  balance              DECIMAL(14,2) NOT NULL DEFAULT 0,  -- total - paid_amount (credit)
+  payment_status       ENUM('unpaid','partial','paid') NOT NULL DEFAULT 'paid',
+  due_date             DATE NULL,                         -- when the credit must be settled
+  status               ENUM('completed','cancelled') NOT NULL DEFAULT 'completed',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_sale_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_sale_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  INDEX idx_sale_date (sale_date)
+);
+
+-- ---------------------------------------------------------------------
+-- 14. SALE LINES - snapshot of the price used at the time of sale,
+--     so old bills never change when the gold price changes.
+--     billed_weight_g = net_weight_g + wastage_g
+--     gold_value      = billed_weight_g * gram_price_used
+--     line_total      = gold_value + making_charge
+-- ---------------------------------------------------------------------
+CREATE TABLE sale_lines (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  sale_id              INT UNSIGNED NOT NULL,
+  item_id              INT UNSIGNED NOT NULL,
+  karat_id             INT UNSIGNED NOT NULL,
+  gold_price_id        INT UNSIGNED NOT NULL,           -- which price row was used
+  qty                  INT NOT NULL DEFAULT 1,
+  net_weight_g         DECIMAL(10,3) NOT NULL,          -- 7.000
+  wastage_g            DECIMAL(10,3) NOT NULL DEFAULT 0,-- 1.000
+  billed_weight_g      DECIMAL(10,3) NOT NULL,          -- 8.000
+  pound_price_used     DECIMAL(14,2) NOT NULL,          -- 100000.00
+  gram_price_used      DECIMAL(14,2) NOT NULL,          -- 12500.00
+  gold_value           DECIMAL(14,2) NOT NULL,          -- 100000.00
+  making_charge        DECIMAL(14,2) NOT NULL DEFAULT 0,-- 5000.00
+  line_total           DECIMAL(14,2) NOT NULL,          -- 105000.00
+  unit_cost            DECIMAL(14,2) NOT NULL DEFAULT 0,-- items.cost_price at the time of sale (for profit)
+  CONSTRAINT fk_sl_sale  FOREIGN KEY (sale_id)       REFERENCES sales(id) ON DELETE CASCADE,
+  CONSTRAINT fk_sl_item  FOREIGN KEY (item_id)       REFERENCES items(id),
+  CONSTRAINT fk_sl_karat FOREIGN KEY (karat_id)      REFERENCES karats(id),
+  CONSTRAINT fk_sl_price FOREIGN KEY (gold_price_id) REFERENCES gold_prices(id)
+);
+
+-- ---------------------------------------------------------------------
+-- 15. STOCK MOVEMENTS - audit trail for every stock change
+-- ---------------------------------------------------------------------
+CREATE TABLE stock_movements (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  item_id              INT UNSIGNED NOT NULL,
+  movement_type        ENUM('purchase','sale','craft_issue','craft_return','adjustment') NOT NULL,
+  qty_change           INT NOT NULL,                    -- +1 / -1
+  weight_change_g      DECIMAL(10,3) NOT NULL,
+  ref_table            VARCHAR(30) NULL,                -- 'purchases','sales','craft_jobs'
+  ref_id               INT UNSIGNED NULL,
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_sm_item FOREIGN KEY (item_id)    REFERENCES items(id),
+  CONSTRAINT fk_sm_user FOREIGN KEY (created_by) REFERENCES users(id),
+  INDEX idx_sm_item (item_id)
+);
+
+-- =====================================================================
+-- PAYMENTS & CUSTOMER CREDIT
+--   Every rupee received from a customer is a customer_payments row
+--   (one row per method: cash + card on the same bill = 2 rows).
+--   Allocations link a payment to one or more bills.
+--   Unallocated amount of a payment = customer advance.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 16. CUSTOMER PAYMENTS (receipts)
+-- ---------------------------------------------------------------------
+CREATE TABLE customer_payments (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  receipt_no           VARCHAR(30) NOT NULL UNIQUE,     -- RCP-000001
+  customer_id          INT UNSIGNED NULL,               -- NULL only for walk-in paid-in-full bills
+  sale_id              INT UNSIGNED NULL,               -- set when taken at the counter with this bill
+  payment_date         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  amount               DECIMAL(14,2) NOT NULL,
+  method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
+  reference_no         VARCHAR(50) NULL,                -- card slip / cheque no / bank ref
+  cheque_date          DATE NULL,
+  notes                VARCHAR(255) NULL,
+  status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cp_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_cp_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
+  CONSTRAINT fk_cp_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT chk_cp_amount  CHECK (amount > 0),
+  INDEX idx_cp_customer (customer_id, payment_date)
+);
+
+-- ---------------------------------------------------------------------
+-- 17. INSTALMENT PLANS (optional - for bills paid over time)
+-- ---------------------------------------------------------------------
+CREATE TABLE instalment_plans (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  sale_id              INT UNSIGNED NOT NULL UNIQUE,
+  customer_id          INT UNSIGNED NOT NULL,
+  financed_amount      DECIMAL(14,2) NOT NULL,          -- bill total - down payment
+  number_of_instalments INT NOT NULL,
+  frequency            ENUM('weekly','monthly') NOT NULL DEFAULT 'monthly',
+  start_date           DATE NOT NULL,
+  status               ENUM('active','completed','cancelled') NOT NULL DEFAULT 'active',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ip_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
+  CONSTRAINT fk_ip_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_ip_user     FOREIGN KEY (created_by)  REFERENCES users(id)
+);
+
+CREATE TABLE instalment_schedule (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  plan_id              INT UNSIGNED NOT NULL,
+  instalment_no        INT NOT NULL,
+  due_date             DATE NOT NULL,
+  amount_due           DECIMAL(14,2) NOT NULL,
+  amount_paid          DECIMAL(14,2) NOT NULL DEFAULT 0,
+  status               ENUM('pending','partial','paid') NOT NULL DEFAULT 'pending', -- overdue = pending/partial AND due_date < today
+  CONSTRAINT fk_is_plan FOREIGN KEY (plan_id) REFERENCES instalment_plans(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_is_plan_no (plan_id, instalment_no),
+  INDEX idx_is_due (due_date, status)
+);
+
+-- ---------------------------------------------------------------------
+-- 18. CUSTOMER PAYMENT ALLOCATIONS (payment -> bill / instalment)
+-- ---------------------------------------------------------------------
+CREATE TABLE customer_payment_allocations (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payment_id           INT UNSIGNED NOT NULL,
+  sale_id              INT UNSIGNED NOT NULL,
+  schedule_id          INT UNSIGNED NULL,               -- set when paying an instalment
+  amount               DECIMAL(14,2) NOT NULL,
+  CONSTRAINT fk_cpa_payment  FOREIGN KEY (payment_id)  REFERENCES customer_payments(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cpa_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
+  CONSTRAINT fk_cpa_schedule FOREIGN KEY (schedule_id) REFERENCES instalment_schedule(id),
+  CONSTRAINT chk_cpa_amount  CHECK (amount > 0)
+);
+
+-- =====================================================================
+-- SUPPLIER BALANCES
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 19. SUPPLIER PAYMENTS
+-- ---------------------------------------------------------------------
+CREATE TABLE supplier_payments (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payment_no           VARCHAR(30) NOT NULL UNIQUE,     -- SPY-000001
+  supplier_id          INT UNSIGNED NOT NULL,
+  payment_date         DATE NOT NULL,
+  amount               DECIMAL(14,2) NOT NULL,
+  method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
+  reference_no         VARCHAR(50) NULL,
+  cheque_date          DATE NULL,
+  notes                VARCHAR(255) NULL,
+  status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_spy_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  CONSTRAINT fk_spy_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT chk_spy_amount  CHECK (amount > 0),
+  INDEX idx_spy_supplier (supplier_id, payment_date)
+);
+
+-- ---------------------------------------------------------------------
+-- 20. SUPPLIER PAYMENT ALLOCATIONS (payment -> purchase)
+-- ---------------------------------------------------------------------
+CREATE TABLE supplier_payment_allocations (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payment_id           INT UNSIGNED NOT NULL,
+  purchase_id          INT UNSIGNED NOT NULL,
+  amount               DECIMAL(14,2) NOT NULL,
+  CONSTRAINT fk_spa_payment  FOREIGN KEY (payment_id)  REFERENCES supplier_payments(id) ON DELETE CASCADE,
+  CONSTRAINT fk_spa_purchase FOREIGN KEY (purchase_id) REFERENCES purchases(id),
+  CONSTRAINT chk_spa_amount  CHECK (amount > 0)
+);
+
+-- =====================================================================
+-- CRAFTSMAN ACCOUNT  (two balances per craftsman)
+--   Gold held  = opening_gold_g + SUM(craftsman_gold_ledger.weight_g)
+--   Cash due   = opening_cash_balance + SUM(fees of completed jobs)
+--                - SUM(craftsman_payments)
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 21. CRAFTSMAN GOLD LEDGER
+--     +weight = gold went TO the craftsman, -weight = gold came back / written off
+--     Job example: issue +8.000, return -7.000, wastage -1.000 -> holds 0
+-- ---------------------------------------------------------------------
+CREATE TABLE craftsman_gold_ledger (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  craftsman_id         INT UNSIGNED NOT NULL,
+  craft_job_id         INT UNSIGNED NULL,
+  karat_id             INT UNSIGNED NOT NULL,
+  txn_date             DATE NOT NULL,
+  txn_type             ENUM('issue','return','wastage','extra_issue','gold_returned','adjustment') NOT NULL,
+  weight_g             DECIMAL(10,3) NOT NULL,          -- signed
+  notes                VARCHAR(255) NULL,
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cgl_craftsman FOREIGN KEY (craftsman_id) REFERENCES craftsmen(id),
+  CONSTRAINT fk_cgl_job       FOREIGN KEY (craft_job_id) REFERENCES craft_jobs(id),
+  CONSTRAINT fk_cgl_karat     FOREIGN KEY (karat_id)     REFERENCES karats(id),
+  CONSTRAINT fk_cgl_user      FOREIGN KEY (created_by)   REFERENCES users(id),
+  INDEX idx_cgl_craftsman (craftsman_id, txn_date)
+);
+
+-- ---------------------------------------------------------------------
+-- 22. CRAFTSMAN PAYMENTS (fees paid, or advances before the job is done)
+-- ---------------------------------------------------------------------
+CREATE TABLE craftsman_payments (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payment_no           VARCHAR(30) NOT NULL UNIQUE,     -- CPY-000001
+  craftsman_id         INT UNSIGNED NOT NULL,
+  craft_job_id         INT UNSIGNED NULL,               -- optional: payment for a specific job
+  payment_date         DATE NOT NULL,
+  amount               DECIMAL(14,2) NOT NULL,
+  method               ENUM('cash','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
+  reference_no         VARCHAR(50) NULL,
+  notes                VARCHAR(255) NULL,
+  status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cpy_craftsman FOREIGN KEY (craftsman_id) REFERENCES craftsmen(id),
+  CONSTRAINT fk_cpy_job       FOREIGN KEY (craft_job_id) REFERENCES craft_jobs(id),
+  CONSTRAINT fk_cpy_user      FOREIGN KEY (created_by)   REFERENCES users(id),
+  CONSTRAINT chk_cpy_amount   CHECK (amount > 0),
+  INDEX idx_cpy_craftsman (craftsman_id, payment_date)
+);
+
+-- =====================================================================
+-- BARCODE / TAG PRINTING
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 23. TAG TEMPLATES (label size and what is printed on it)
+-- ---------------------------------------------------------------------
+CREATE TABLE tag_templates (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name                 VARCHAR(50) NOT NULL UNIQUE,
+  width_mm             DECIMAL(6,2) NOT NULL,
+  height_mm            DECIMAL(6,2) NOT NULL,
+  barcode_type         ENUM('CODE128','QR') NOT NULL DEFAULT 'CODE128',
+  fields               JSON NOT NULL,                   -- ["shop_name","item_code","karat","net_weight_g","wastage_g"]
+  is_default           TINYINT(1) NOT NULL DEFAULT 0,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 24. TAG PRINT LOG (which tags were printed, by whom)
+-- ---------------------------------------------------------------------
+CREATE TABLE tag_print_logs (
+  id                   BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  item_id              INT UNSIGNED NOT NULL,
+  template_id          INT UNSIGNED NOT NULL,
+  copies               INT NOT NULL DEFAULT 1,
+  printed_by           INT UNSIGNED NOT NULL,
+  printed_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tpl_item     FOREIGN KEY (item_id)     REFERENCES items(id),
+  CONSTRAINT fk_tpl_template FOREIGN KEY (template_id) REFERENCES tag_templates(id),
+  CONSTRAINT fk_tpl_user     FOREIGN KEY (printed_by)  REFERENCES users(id)
+);
+
+-- ---------------------------------------------------------------------
+-- 25. DOCUMENT SEQUENCES (running numbers for bills, receipts, codes)
+--     App reads with SELECT ... FOR UPDATE inside the save transaction.
+-- ---------------------------------------------------------------------
+CREATE TABLE document_sequences (
+  code                 VARCHAR(20) PRIMARY KEY,         -- 'INV','RCP','PUR' ...
+  prefix               VARCHAR(10) NOT NULL,            -- 'INV-'
+  next_number          INT UNSIGNED NOT NULL DEFAULT 1,
+  pad_length           INT NOT NULL DEFAULT 6           -- INV-000001
+);
+
+-- ---------------------------------------------------------------------
+-- SEED DATA
+-- ---------------------------------------------------------------------
+INSERT INTO settings (setting_key, setting_value) VALUES
+  ('grams_per_pound', '8'),
+  ('shop_name', 'Jewellery'),                -- printed on barcode tags and bills
+  ('shop_address', ''),
+  ('shop_phone', ''),
+  ('invoice_footer', 'Thank you! Please keep this bill for exchanges.'),
+  ('max_failed_logins', '5'),
+  ('lock_minutes', '15');
+
+-- Roles
+INSERT INTO roles (name, description, is_super_admin, is_system) VALUES
+  ('Admin',        'Full access to everything',                         1, 1),
+  ('Manager',      'Daily operations, prices, purchases, reports',       0, 1),
+  ('Cashier',      'Sales counter only',                                 0, 1),
+  ('Stock Keeper', 'Items, purchases and craftsman jobs',                0, 0);
+
+-- Permissions: standard CRUD for each module
+INSERT INTO permissions (code, module, action, description, sort_order)
+SELECT CONCAT(m.module, '.', a.action), m.module, a.action,
+       CONCAT(UPPER(LEFT(a.action,1)), SUBSTRING(a.action,2), ' ', REPLACE(m.module,'_',' ')),
+       m.sort_order * 10 + a.sort_order
+FROM (
+  SELECT 'users' AS module, 1 AS sort_order UNION ALL SELECT 'roles', 2
+  UNION ALL SELECT 'karats', 3       UNION ALL SELECT 'categories', 4
+  UNION ALL SELECT 'items', 5        UNION ALL SELECT 'suppliers', 6
+  UNION ALL SELECT 'craftsmen', 7    UNION ALL SELECT 'customers', 8
+  UNION ALL SELECT 'purchases', 9    UNION ALL SELECT 'craft_jobs', 10
+) m
+CROSS JOIN (
+  SELECT 'view' AS action, 1 AS sort_order UNION ALL SELECT 'create', 2
+  UNION ALL SELECT 'edit', 3 UNION ALL SELECT 'delete', 4
+) a;
+
+-- Permissions: special actions
+INSERT INTO permissions (code, module, action, description, sort_order) VALUES
+  ('dashboard.view',          'dashboard',   'view',         'See the dashboard',                          1),
+  ('gold_prices.view',        'gold_prices', 'view',         'See current and past gold prices',         200),
+  ('gold_prices.update',      'gold_prices', 'update',       'Enter a new daily gold price',             201),
+  ('craft_jobs.complete',     'craft_jobs',  'complete',     'Receive finished item from craftsman',     105),
+  ('sales.view',              'sales',       'view',         'See bills',                                210),
+  ('sales.create',            'sales',       'create',       'Make a new bill',                          211),
+  ('sales.discount',          'sales',       'discount',     'Give a discount on a bill',                212),
+  ('sales.cancel',            'sales',       'cancel',       'Cancel a bill',                            213),
+  ('sales.reprint',           'sales',       'reprint',      'Reprint an old bill',                      214),
+  ('reports.sales',           'reports',     'sales',        'Sales reports',                            220),
+  ('reports.stock',           'reports',     'stock',        'Stock reports',                            221),
+  ('reports.wastage',         'reports',     'wastage',      'Craftsman wastage reports',                222),
+  ('reports.profit',          'reports',     'profit',       'Profit report (shows cost prices)',        223),
+  ('items.view_cost',         'items',       'view_cost',    'See purchase / cost price of items',        55),
+  ('settings.edit',           'settings',    'edit',         'Change system settings',                   230),
+  ('audit_logs.view',         'audit_logs',  'view',         'See audit and login history',              240),
+  ('sales.credit',            'sales',       'credit',       'Save a bill with an unpaid balance',       215),
+  ('customer_payments.view',  'customer_payments', 'view',   'See customer receipts and balances',       250),
+  ('customer_payments.create','customer_payments', 'create', 'Receive a customer payment',               251),
+  ('customer_payments.cancel','customer_payments', 'cancel', 'Cancel a customer receipt',                252),
+  ('instalments.view',        'instalments', 'view',         'See instalment plans',                     255),
+  ('instalments.create',      'instalments', 'create',       'Put a bill on an instalment plan',         256),
+  ('supplier_payments.view',  'supplier_payments', 'view',   'See supplier payments and balances',       260),
+  ('supplier_payments.create','supplier_payments', 'create', 'Pay a supplier',                           261),
+  ('supplier_payments.cancel','supplier_payments', 'cancel', 'Cancel a supplier payment',                262),
+  ('craftsman_account.view',  'craftsman_account', 'view',   'See craftsman gold held and cash due',     270),
+  ('craftsman_account.adjust','craftsman_account', 'adjust', 'Gold adjustment / gold returned entries',  271),
+  ('craftsman_payments.create','craftsman_payments','create','Pay a craftsman',                          272),
+  ('craftsman_payments.cancel','craftsman_payments','cancel','Cancel a craftsman payment',               273),
+  ('tags.print',              'tags',        'print',        'Print barcode tags',                       280),
+  ('tag_templates.edit',      'tag_templates','edit',        'Create and change tag layouts',            281),
+  ('reports.customer_balances','reports',    'customer_balances', 'Customer outstanding report',         224),
+  ('reports.supplier_balances','reports',    'supplier_balances', 'Supplier outstanding report',         225),
+  ('reports.craftsman_balances','reports',   'craftsman_balances','Craftsman gold and cash report',      226);
+
+-- Manager: everything except users, roles, settings and audit
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.name = 'Manager'
+  AND p.module NOT IN ('users','roles','settings','audit_logs');
+
+-- Cashier: sales counter
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.name = 'Cashier'
+  AND p.code IN ('dashboard.view','gold_prices.view','items.view',
+                 'customers.view','customers.create','customers.edit',
+                 'sales.view','sales.create','sales.reprint',
+                 'customer_payments.view','customer_payments.create',
+                 'instalments.view','tags.print');
+
+-- Stock Keeper: items, purchases, craftsmen and jobs
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE r.name = 'Stock Keeper'
+  AND (p.module IN ('categories','items','suppliers','purchases','craftsmen','craft_jobs')
+       OR p.code IN ('dashboard.view','gold_prices.view','karats.view','reports.stock','reports.wastage',
+                     'craftsman_account.view','tags.print'))
+  AND p.code NOT LIKE '%.delete';
+
+-- The first Admin user is created by the app's seed script (bcrypt password,
+-- must_change_password = 1), because a password hash cannot be written here.
+
+-- Running numbers
+INSERT INTO document_sequences (code, prefix) VALUES
+  ('INV',  'INV-'),   -- sales bills
+  ('RCP',  'RCP-'),   -- customer receipts
+  ('PUR',  'PUR-'),   -- purchases
+  ('SPY',  'SPY-'),   -- supplier payments
+  ('JOB',  'JOB-'),   -- craftsman jobs
+  ('CPY',  'CPY-'),   -- craftsman payments
+  ('ITEM', 'JW');     -- item barcodes: JW000001
+
+-- Default jewellery tag (dumbbell / rat-tail label)
+INSERT INTO tag_templates (name, width_mm, height_mm, barcode_type, fields, is_default) VALUES
+  ('Standard 75x12', 75, 12, 'CODE128',
+   JSON_ARRAY('shop_name','barcode','item_code','karat','net_weight_g','wastage_g'), 1);
+
+INSERT INTO karats (name, purity, sort_order) VALUES
+  ('24K', 0.9990, 1),
+  ('22K', 0.9160, 2);
+
+-- ---------------------------------------------------------------------
+-- HANDY VIEW: current price for every karat
+-- ---------------------------------------------------------------------
+CREATE VIEW v_current_gold_prices AS
+SELECT k.id AS karat_id, k.name AS karat, gp.id AS gold_price_id,
+       gp.pound_price, gp.gram_price, gp.effective_at
+FROM karats k
+JOIN gold_prices gp ON gp.id = (
+  SELECT g2.id FROM gold_prices g2
+  WHERE g2.karat_id = k.id
+  ORDER BY g2.effective_at DESC, g2.id DESC
+  LIMIT 1
+)
+WHERE k.is_active = 1;
+
+-- ---------------------------------------------------------------------
+-- HANDY VIEW: effective permissions of every user
+--   (role permissions + granted overrides - denied overrides;
+--    super-admin roles get every permission)
+-- ---------------------------------------------------------------------
+CREATE VIEW v_user_permissions AS
+SELECT u.id AS user_id, p.code
+FROM users u
+JOIN roles r ON r.id = u.role_id
+JOIN permissions p
+WHERE u.is_active = 1 AND r.is_active = 1
+  AND (
+        r.is_super_admin = 1
+     OR EXISTS (SELECT 1 FROM role_permissions rp
+                WHERE rp.role_id = r.id AND rp.permission_id = p.id)
+     OR EXISTS (SELECT 1 FROM user_permissions up
+                WHERE up.user_id = u.id AND up.permission_id = p.id AND up.is_granted = 1)
+  )
+  AND NOT EXISTS (SELECT 1 FROM user_permissions up
+                  WHERE up.user_id = u.id AND up.permission_id = p.id AND up.is_granted = 0
+                    AND r.is_super_admin = 0);
+
+-- ---------------------------------------------------------------------
+-- HANDY VIEW: what each customer owes (+) or has in advance (-)
+-- ---------------------------------------------------------------------
+CREATE VIEW v_customer_balances AS
+SELECT c.id AS customer_id, c.name, c.phone, c.credit_limit,
+       c.opening_balance
+       + COALESCE((SELECT SUM(s.total) FROM sales s
+                   WHERE s.customer_id = c.id AND s.status = 'completed'), 0)
+       - COALESCE((SELECT SUM(p.amount) FROM customer_payments p
+                   WHERE p.customer_id = c.id AND p.status = 'active'), 0)
+         AS balance
+FROM customers c;
+
+-- ---------------------------------------------------------------------
+-- HANDY VIEW: what we owe each supplier
+-- ---------------------------------------------------------------------
+CREATE VIEW v_supplier_balances AS
+SELECT sp.id AS supplier_id, sp.name, sp.phone,
+       sp.opening_balance
+       + COALESCE((SELECT SUM(pu.total_amount) FROM purchases pu
+                   WHERE pu.supplier_id = sp.id), 0)
+       - COALESCE((SELECT SUM(py.amount) FROM supplier_payments py
+                   WHERE py.supplier_id = sp.id AND py.status = 'active'), 0)
+         AS balance
+FROM suppliers sp;
+
+-- ---------------------------------------------------------------------
+-- HANDY VIEW: craftsman gold held and cash due
+-- ---------------------------------------------------------------------
+CREATE VIEW v_craftsman_balances AS
+SELECT cm.id AS craftsman_id, cm.name, cm.phone,
+       cm.opening_gold_g
+       + COALESCE((SELECT SUM(l.weight_g) FROM craftsman_gold_ledger l
+                   WHERE l.craftsman_id = cm.id), 0)
+         AS gold_held_g,
+       cm.opening_cash_balance
+       + COALESCE((SELECT SUM(j.craftsman_fee) FROM craft_jobs j
+                   WHERE j.craftsman_id = cm.id AND j.status = 'completed'), 0)
+       - COALESCE((SELECT SUM(p.amount) FROM craftsman_payments p
+                   WHERE p.craftsman_id = cm.id AND p.status = 'active'), 0)
+         AS cash_due
+FROM craftsmen cm;

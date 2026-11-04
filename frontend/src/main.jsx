@@ -1,0 +1,23 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { CssBaseline, ThemeProvider } from '@mui/material';
+import theme from './theme';
+import { AuthProvider } from './auth/AuthContext';
+import { NotifyProvider } from './components/Notify';
+import App from './App';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <NotifyProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </NotifyProvider>
+    </ThemeProvider>
+  </React.StrictMode>,
+);

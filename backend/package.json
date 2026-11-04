@@ -1,0 +1,22 @@
+{
+  "name": "jewellery-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file=.env src/server.js",
+    "start": "node --env-file=.env src/server.js",
+    "db:init": "node --env-file=.env scripts/db-init.js",
+    "db:fresh": "node --env-file=.env scripts/db-init.js --fresh",
+    "db:seed": "node --env-file=.env scripts/seed-admin.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.24.6",
+    "zod": "^4.6.7"
+  }
+}

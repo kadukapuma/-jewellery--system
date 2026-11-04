@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node -v; npm -v; \\(Get-Command mysql -ErrorAction SilentlyContinue\\).Source; Test-Path C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe; Get-Service | Where-Object { $_.Name -match 'mysql|maria' } | Format-Table Name,Status -AutoSize)"
+    ]
+  }
+}
