@@ -12,6 +12,7 @@ import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import KaratFormDialog from './KaratFormDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function KaratsPage() {
   const { can } = useAuth();
@@ -51,6 +52,8 @@ export default function KaratsPage() {
     }
   };
 
+  const { pageRows, pager } = usePagedRows(karats);
+
   return (
     <>
       <PageHeader
@@ -75,7 +78,7 @@ export default function KaratsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {karats.map((k) => (
+              {pageRows.map((k) => (
                 <TableRow key={k.id} hover>
                   <TableCell><Typography variant="body2" sx={{ fontWeight: 600 }}>{k.name}</Typography></TableCell>
                   <TableCell>{(k.purity * 100).toFixed(1)}% <Typography component="span" variant="caption" color="text.secondary">({k.purity})</Typography></TableCell>
@@ -99,6 +102,7 @@ export default function KaratsPage() {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </Card>
 

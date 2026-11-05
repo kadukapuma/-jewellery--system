@@ -12,6 +12,7 @@ import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import RoleEditorDialog from './RoleEditorDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function RolesPage() {
   const { user: me, can } = useAuth();
@@ -53,6 +54,8 @@ export default function RolesPage() {
   // A non-Admin cannot edit the role they belong to (server enforces this too).
   const canEdit = (r) => can('roles.edit') && (me.is_super_admin || r.id !== me.role_id);
 
+  const { pageRows, pager } = usePagedRows(roles);
+
   return (
     <>
       <PageHeader
@@ -76,7 +79,7 @@ export default function RolesPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {roles.map((r) => (
+              {pageRows.map((r) => (
                 <TableRow key={r.id} hover>
                   <TableCell>
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -102,6 +105,7 @@ export default function RolesPage() {
               ))}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </Card>
 

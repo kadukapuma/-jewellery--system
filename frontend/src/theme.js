@@ -34,6 +34,27 @@ const theme = createTheme({
     button: { textTransform: 'none', fontWeight: 600 },
   },
   components: {
+    // Thin gold scrollbars everywhere (pages, popups, tables, menus).
+    MuiCssBaseline: {
+      styleOverrides: {
+        '*::-webkit-scrollbar': { width: 10, height: 10 },
+        '*::-webkit-scrollbar-track': { background: 'transparent' },
+        '*::-webkit-scrollbar-thumb': {
+          backgroundColor: gold[200],
+          borderRadius: 999,
+          border: '3px solid transparent', // inset the thumb so it looks slimmer
+          backgroundClip: 'padding-box',
+        },
+        '*::-webkit-scrollbar-thumb:hover': { backgroundColor: gold[500] },
+        '*::-webkit-scrollbar-thumb:active': { backgroundColor: gold[600] },
+        '*::-webkit-scrollbar-corner': { background: 'transparent' },
+        // Firefox has no ::-webkit-scrollbar; give it the same colours. (Kept out of Chrome,
+        // where scrollbar-color would switch off the rounded thumb above.)
+        '@supports not selector(::-webkit-scrollbar)': {
+          '*': { scrollbarWidth: 'thin', scrollbarColor: `${gold[300]} transparent` },
+        },
+      },
+    },
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {

@@ -19,6 +19,7 @@ import { formatAmount, formatDate, formatMoney } from '../../utils/format';
 import SupplierFormDialog from './SupplierFormDialog';
 import SupplierStatementDialog from './SupplierStatementDialog';
 import SupplierPaymentDialog from './SupplierPaymentDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function SuppliersPage() {
   const { can } = useAuth();
@@ -69,6 +70,8 @@ export default function SuppliersPage() {
     }
   };
 
+  const { pageRows, pager } = usePagedRows(filtered);
+
   return (
     <>
       <PageHeader
@@ -108,7 +111,7 @@ export default function SuppliersPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.map((s) => (
+              {pageRows.map((s) => (
                 <TableRow key={s.id} hover>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{s.name}</Typography>
@@ -144,6 +147,7 @@ export default function SuppliersPage() {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </Card>
 

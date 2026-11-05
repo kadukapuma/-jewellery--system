@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import api, { errorMessage } from '../../api/client';
 import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS } from '../../utils/payments';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 function balanceText(v) {
   if (v > 0) return `${formatMoney(v)} owed`;
@@ -20,6 +22,8 @@ export default function SupplierStatementDialog({ supplierId, onClose, onPay }) 
   useEffect(() => {
     api.get(`/suppliers/${supplierId}/statement`).then((res) => setData(res.data)).catch((err) => setError(errorMessage(err)));
   }, [supplierId]);
+
+  const { pageRows, pager } = usePagedRows(data?.entries);
 
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -44,11 +48,13 @@ export default function SupplierStatementDialog({ supplierId, onClose, onPay }) 
                 </TableRow>
               </TableHead>
               <TableBody>
-                <TableRow>
-                  <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>Opening balance</TableCell>
-                  <TableCell align="right">{formatMoney(data.opening_balance)}</TableCell>
-                </TableRow>
-                {data.entries.map((e) => (
+                {pager.page === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>Opening balance</TableCell>
+                    <TableCell align="right">{formatMoney(data.opening_balance)}</TableCell>
+                  </TableRow>
+                )}
+                {pageRows.map((e) => (
                   <TableRow key={`${e.type}-${e.id}`} hover>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</TableCell>
                     <TableCell>{e.ref}</TableCell>
@@ -65,6 +71,7 @@ export default function SupplierStatementDialog({ supplierId, onClose, onPay }) 
                 )}
               </TableBody>
             </Table>
+            <TablePager {...pager} />
           </TableContainer>
         )}
       </DialogContent>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, Switch, TextField,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, Switch, TextField,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 

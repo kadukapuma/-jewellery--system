@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle, InputAdornment, Stack, TextField, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import CalculateIcon from '@mui/icons-material/CalculateOutlined';
 import api, { errorMessage } from '../../api/client';
 import { useNotify } from '../../components/Notify';

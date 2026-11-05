@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, LinearProgress, MenuItem,
-  Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, Typography,
+  Box, Button, Checkbox, Chip, DialogActions, DialogContent, DialogTitle, InputAdornment, LinearProgress, MenuItem,
+  Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import SearchIcon from '@mui/icons-material/Search';
 import api, { errorMessage } from '../../api/client';
 import { formatMoney } from '../../utils/format';

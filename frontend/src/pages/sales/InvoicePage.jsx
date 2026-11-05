@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
+  Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PrintIcon from '@mui/icons-material/PrintOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';

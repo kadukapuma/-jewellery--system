@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Tab, Table, TableBody, TableCell,
+  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, LinearProgress, Tab, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Tabs, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { formatDate, formatMoney } from '../../utils/format';
@@ -10,6 +11,7 @@ import { formatWeight } from '../../utils/pricing';
 import { PAYMENT_METHODS } from '../../utils/payments';
 import GoldAdjustmentDialog from './GoldAdjustmentDialog';
 import CraftsmanPaymentDialog from './CraftsmanPaymentDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 const GOLD_TYPES = {
   issue: 'Gold given for job',
@@ -42,6 +44,9 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
   };
 
   const c = data?.craftsman;
+
+  const { pageRows: pageGold, pager: pagerGold } = usePagedRows(data?.gold.entries);
+  const { pageRows: pageCash, pager: pagerCash } = usePagedRows(data?.cash.entries);
 
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -82,7 +87,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
                   <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>Opening</TableCell>
                   <TableCell align="right">{formatWeight(data.gold.opening)}</TableCell>
                 </TableRow>
-                {data.gold.entries.map((e) => (
+                {pageGold.map((e) => (
                   <TableRow key={e.id} hover>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.txn_date)}</TableCell>
                     <TableCell>
@@ -100,6 +105,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
                 ))}
               </TableBody>
             </Table>
+            <TablePager {...pagerGold} />
           </TableContainer>
         )}
         {data && tab === 'cash' && (
@@ -120,7 +126,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
                   <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>Opening</TableCell>
                   <TableCell align="right">{formatMoney(data.cash.opening)}</TableCell>
                 </TableRow>
-                {data.cash.entries.map((e) => (
+                {pageCash.map((e) => (
                   <TableRow key={`${e.type}-${e.id}`} hover>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</TableCell>
                     <TableCell>{e.ref}</TableCell>
@@ -134,6 +140,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
                 ))}
               </TableBody>
             </Table>
+            <TablePager {...pagerCash} />
           </TableContainer>
         )}
       </DialogContent>

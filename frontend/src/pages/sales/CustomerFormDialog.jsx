@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, TextField } from '@mui/material';
+import {
+  Alert, Button, DialogActions, DialogContent, DialogTitle, Grid, TextField,
+} from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -54,22 +58,22 @@ export default function CustomerFormDialog({ customer, initialName = '', onClose
       <DialogTitle>{isNew ? 'Add customer' : `Edit ${customer.name}`}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
-          <Grid size={{ xs: 12, sm: 7 }}>{field('name', 'Name', { required: true, autoFocus: true })}</Grid>
-          <Grid size={{ xs: 12, sm: 5 }}>{field('phone', 'Phone')}</Grid>
-          <Grid size={{ xs: 12, sm: 5 }}>{field('nic', 'NIC')}</Grid>
-          <Grid size={{ xs: 12, sm: 7 }}>{field('address', 'Address')}</Grid>
-          {can('sales.credit') || can('customers.edit') ? (
-            <>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                {field('credit_limit', 'Credit limit', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: '0 = must pay in full' })}
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                {field('opening_balance', 'Opening balance', { type: 'number', slotProps: { htmlInput: { step: 'any' } }, helperText: 'Owed before using this system' })}
-              </Grid>
-            </>
-          ) : null}
-        </Grid>
+        <FormSection title="Customer details">
+          <Grid size={{ xs: 12 }}>{field('name', 'Name', { required: true, autoFocus: true })}</Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>{field('phone', 'Phone')}</Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>{field('nic', 'NIC')}</Grid>
+          <Grid size={{ xs: 12 }}>{field('address', 'Address', { multiline: true, minRows: 2 })}</Grid>
+        </FormSection>
+        {(can('sales.credit') || can('customers.edit')) && (
+          <FormSection title="Credit & balance">
+            <Grid size={{ xs: 12, sm: 6 }}>
+              {field('credit_limit', 'Credit limit', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: '0 = must pay in full' })}
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              {field('opening_balance', 'Opening balance', { type: 'number', slotProps: { htmlInput: { step: 'any' } }, helperText: 'Owed before using this system' })}
+            </Grid>
+          </FormSection>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

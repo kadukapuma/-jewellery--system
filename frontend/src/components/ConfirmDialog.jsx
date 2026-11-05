@@ -1,4 +1,7 @@
-import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
+import {
+  Button, DialogActions, DialogContent, DialogContentText, DialogTitle,
+} from '@mui/material';
+import Dialog from './Dialog';
 
 export default function ConfirmDialog({ open, title, message, confirmText = 'Yes', color = 'primary', busy, onConfirm, onClose }) {
   return (

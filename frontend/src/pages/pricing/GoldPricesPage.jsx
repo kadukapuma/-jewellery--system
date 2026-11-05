@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, ButtonBase, Grid, LinearProgress, MenuItem, Skeleton, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, TextField, Typography,
+  Alert, Box, Button, ButtonBase, Grid, LinearProgress, MenuItem, Skeleton, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, Typography,
 } from '@mui/material';
+import TextField from '../../components/TextField';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import api, { errorMessage } from '../../api/client';
@@ -15,6 +16,7 @@ import { formatAmount, formatDateTime, formatMoney, formatPercent, formatTime } 
 import { ink, stone } from '../../theme';
 import UpdatePricesDialog from './UpdatePricesDialog';
 import PriceHistoryChart from './PriceHistoryChart';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 const TONES = ['gold', 'light', 'gray'];
 const PERIODS = [
@@ -66,6 +68,8 @@ export default function GoldPricesPage() {
   const prices = current?.prices || [];
   const missingToday = prices.filter((p) => !p.is_today);
   const selected = prices.find((p) => p.karat_id === karatId);
+
+  const { pageRows, pager } = usePagedRows(history);
 
   return (
     <>
@@ -142,7 +146,7 @@ export default function GoldPricesPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {history.map((h) => {
+                {pageRows.map((h) => {
                   const change = changeOf(h);
                   return (
                     <TableRow key={h.id} hover>
@@ -162,6 +166,7 @@ export default function GoldPricesPage() {
                 )}
               </TableBody>
             </Table>
+            <TablePager {...pager} />
           </TableContainer>
         </SectionCard>
       )}

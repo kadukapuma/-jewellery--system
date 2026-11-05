@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Table,
-  TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography,
+  Box, Button, Card, Chip, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Table,
+  TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import CancelIcon from '@mui/icons-material/CancelOutlined';
 import api, { errorMessage } from '../../api/client';

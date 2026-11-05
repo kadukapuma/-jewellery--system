@@ -17,6 +17,7 @@ import { formatAmount, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
 import CraftsmanFormDialog from './CraftsmanFormDialog';
 import CraftsmanAccountDialog from './CraftsmanAccountDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function CraftsmenPage() {
   const { can } = useAuth();
@@ -60,6 +61,8 @@ export default function CraftsmenPage() {
     }
   };
 
+  const { pageRows, pager } = usePagedRows(craftsmen);
+
   return (
     <>
       <PageHeader
@@ -96,7 +99,7 @@ export default function CraftsmenPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {craftsmen.map((c) => (
+              {pageRows.map((c) => (
                 <TableRow key={c.id} hover>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{c.name}</Typography>
@@ -127,6 +130,7 @@ export default function CraftsmenPage() {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </Card>
 

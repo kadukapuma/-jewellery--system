@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody,
-  TableCell, TableHead, TableRow, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
+  TableHead, TableRow, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import api, { errorMessage } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { actionLabel, groupPermissions } from '../../utils/permissions';

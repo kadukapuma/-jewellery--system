@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment,
+  Alert, Box, Button, Checkbox, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment,
   TextField, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -102,9 +104,9 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
       </DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={3} sx={{ pt: 1 }}>
+        <Grid container spacing={4} sx={{ pt: 1 }}>
           <Grid size={{ xs: 12, md: 7 }}>
-            <Grid container spacing={2}>
+            <FormSection title="Finished piece">
               <Grid size={{ xs: 12, sm: 6 }}>
                 {field('returned_weight_g', 'Finished weight', {
                   required: true, autoFocus: true, type: 'number',
@@ -132,9 +134,11 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
                   <Grid size={{ xs: 12, sm: 4 }}>{field('item_code', 'Item code', { placeholder: 'Auto' })}</Grid>
                 </>
               )}
-              <Grid size={{ xs: 6 }}>{field('making_charge', rework ? 'Making charge added' : 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: rework ? `Total ${formatMoney(totalMaking)}` : 'Customer pays' })}</Grid>
-              <Grid size={{ xs: 6 }}>{field('craftsman_fee', 'Craftsman fee', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'Added to what you owe them' })}</Grid>
-            </Grid>
+            </FormSection>
+            <FormSection title="Charges">
+              <Grid size={{ xs: 12, sm: 6 }}>{field('making_charge', rework ? 'Making charge added' : 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: rework ? `Total ${formatMoney(totalMaking)}` : 'Customer pays' })}</Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>{field('craftsman_fee', 'Craftsman fee', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'Added to what you owe them' })}</Grid>
+            </FormSection>
           </Grid>
           <Grid size={{ xs: 12, md: 5 }}>
             <Box sx={{ bgcolor: gold[50], border: `1px solid ${gold[200]}`, borderRadius: '20px', p: 2.5 }}>

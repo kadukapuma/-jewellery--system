@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, LinearProgress, Link, MenuItem, Table,
-  TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, Grid, LinearProgress, Link, MenuItem, Table,
+  TableBody, TableCell, TableContainer, TableHead, TableRow, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import api, { errorMessage, fieldErrors } from '../../api/client';
@@ -13,6 +15,7 @@ import { formatDateTime } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
 import { REASONS_BY_DIRECTION, STOCK_REASONS, movementLabel, movementLink } from '../../utils/stock';
 import { stone } from '../../theme';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 const emptyForm = (direction = 'in') => ({ direction, qty: 1, reason: REASONS_BY_DIRECTION[direction][0], note: '' });
 
@@ -81,6 +84,8 @@ export default function StockDialog({ item: initial, onClose, onChanged }) {
       setBusy(false);
     }
   };
+
+  const { pageRows, pager } = usePagedRows(movements);
 
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -151,7 +156,7 @@ export default function StockDialog({ item: initial, onClose, onChanged }) {
               </TableRow>
             </TableHead>
             <TableBody>
-              {movements.map((m) => (
+              {pageRows.map((m) => (
                 <MovementRow key={m.id} m={m} />
               ))}
               {!loading && !movements.length && (
@@ -159,6 +164,7 @@ export default function StockDialog({ item: initial, onClose, onChanged }) {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </DialogContent>
       <DialogActions>

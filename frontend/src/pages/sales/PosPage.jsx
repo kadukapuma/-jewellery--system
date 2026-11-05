@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, Checkbox, Divider, FormControlLabel, Grid, IconButton, InputAdornment, MenuItem, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
+  Alert, Box, Button, Card, Checkbox, Divider, FormControlLabel, Grid, IconButton, InputAdornment, MenuItem, Table,
+  TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Typography,
 } from '@mui/material';
+import TextField from '../../components/TextField';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import AddIcon from '@mui/icons-material/Add';

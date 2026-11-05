@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, MenuItem, Switch, TextField,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, MenuItem, Switch,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
+import TextField from '../../components/TextField';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -89,11 +92,13 @@ export default function UserFormDialog({ user, onClose, onSaved }) {
       <DialogTitle>{isNew ? 'Add user' : `Edit ${user.name}`}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
-          <Grid size={{ xs: 12, sm: 6 }}>{field('name', 'Full name', { required: true, autoFocus: true })}</Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>{field('username', 'Username', { required: true, disabled: !isNew })}</Grid>
+        <FormSection title="Personal details">
+          <Grid size={{ xs: 12 }}>{field('name', 'Full name', { required: true, autoFocus: true })}</Grid>
           <Grid size={{ xs: 12, sm: 6 }}>{field('phone', 'Phone')}</Grid>
           <Grid size={{ xs: 12, sm: 6 }}>{field('email', 'Email')}</Grid>
+        </FormSection>
+        <FormSection title="Login & access">
+          <Grid size={{ xs: 12, sm: 6 }}>{field('username', 'Username', { required: true, disabled: !isNew })}</Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
             {field('role_id', 'Role', {
               select: true,
@@ -121,7 +126,7 @@ export default function UserFormDialog({ user, onClose, onSaved }) {
               </Grid>
             </>
           )}
-        </Grid>
+        </FormSection>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

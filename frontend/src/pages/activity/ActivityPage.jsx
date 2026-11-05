@@ -6,6 +6,7 @@ import api, { errorMessage } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import { formatDateTime } from '../../utils/format';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 function summarize(values) {
   if (!values) return '';
@@ -36,6 +37,8 @@ export default function ActivityPage() {
     setTab(value);
   };
 
+  const { pageRows, pager } = usePagedRows(rows);
+
   return (
     <>
       <PageHeader title="Activity Log" subtitle="Latest 200 entries" />
@@ -58,7 +61,7 @@ export default function ActivityPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {rows.map((r) => (
+                {pageRows.map((r) => (
                   <TableRow key={r.id} hover>
                     <TableCell>{formatDateTime(r.created_at)}</TableCell>
                     <TableCell>{r.username_tried}</TableCell>
@@ -83,7 +86,7 @@ export default function ActivityPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {rows.map((r) => (
+                {pageRows.map((r) => (
                   <TableRow key={r.id} hover>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(r.created_at)}</TableCell>
                     <TableCell>{r.user_name}</TableCell>
@@ -99,6 +102,7 @@ export default function ActivityPage() {
               </TableBody>
             </Table>
           )}
+          <TablePager {...pager} />
           {!loading && !rows.length && (
             <Typography align="center" color="text.secondary" sx={{ py: 4 }}>Nothing yet</Typography>
           )}

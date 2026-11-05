@@ -18,6 +18,7 @@ import { formatWeight } from '../../utils/pricing';
 import { PAYMENT_METHODS, PAYMENT_STATUS, todayYmd } from '../../utils/payments';
 import PrintTagsDialog from '../tags/PrintTagsDialog';
 import SupplierPaymentDialog from './SupplierPaymentDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function PurchaseDetailPage() {
   const { id } = useParams();
@@ -56,6 +57,9 @@ export default function PurchaseDetailPage() {
       setBusy(false);
     }
   };
+
+  const { pageRows: pageLines, pager: pagerLines } = usePagedRows(purchase?.lines);
+  const { pageRows: pagePayments, pager: pagerPayments } = usePagedRows(purchase?.payments);
 
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!purchase) return <LinearProgress />;
@@ -123,7 +127,7 @@ export default function PurchaseDetailPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {purchase.lines.map((l) => (
+              {pageLines.map((l) => (
                 <TableRow key={l.id}>
                   <TableCell sx={{ fontWeight: 600 }}>{l.item_code}</TableCell>
                   <TableCell>
@@ -141,6 +145,7 @@ export default function PurchaseDetailPage() {
               ))}
             </TableBody>
           </Table>
+          <TablePager {...pagerLines} />
         </TableContainer>
       </Card>
 
@@ -157,7 +162,7 @@ export default function PurchaseDetailPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {purchase.payments.map((p) => (
+              {pagePayments.map((p) => (
                 <TableRow key={p.payment_id}>
                   <TableCell>{p.payment_no}</TableCell>
                   <TableCell>{formatDate(p.payment_date)}</TableCell>
@@ -170,6 +175,7 @@ export default function PurchaseDetailPage() {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pagerPayments} />
         </TableContainer>
       </Card>
 

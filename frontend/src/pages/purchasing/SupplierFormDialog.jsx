@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, Switch, TextField,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, Switch, TextField,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { emailProblem } from '../../utils/validation';
@@ -59,11 +61,13 @@ export default function SupplierFormDialog({ supplier, onClose, onSaved }) {
       <DialogTitle>{isNew ? 'Add supplier' : `Edit ${supplier.name}`}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
+        <FormSection title="Supplier details">
           <Grid size={{ xs: 12 }}>{field('name', 'Supplier name', { required: true, autoFocus: true })}</Grid>
           <Grid size={{ xs: 12, sm: 6 }}>{field('phone', 'Phone')}</Grid>
           <Grid size={{ xs: 12, sm: 6 }}>{field('email', 'Email')}</Grid>
-          <Grid size={{ xs: 12 }}>{field('address', 'Address')}</Grid>
+          <Grid size={{ xs: 12 }}>{field('address', 'Address', { multiline: true, minRows: 2 })}</Grid>
+        </FormSection>
+        <FormSection title="Payment terms">
           <Grid size={{ xs: 12, sm: 6 }}>
             {field('credit_days', 'Credit period', {
               type: 'number',
@@ -86,7 +90,7 @@ export default function SupplierFormDialog({ supplier, onClose, onSaved }) {
               />
             </Grid>
           )}
-        </Grid>
+        </FormSection>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

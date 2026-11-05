@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, Switch, TextField,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, Switch, TextField,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 
@@ -54,10 +56,12 @@ export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
       <DialogTitle>{isNew ? 'Add craftsman' : `Edit ${craftsman.name}`}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
+        <FormSection title="Craftsman details">
           <Grid size={{ xs: 12, sm: 7 }}>{field('name', 'Name', { required: true, autoFocus: true })}</Grid>
           <Grid size={{ xs: 12, sm: 5 }}>{field('phone', 'Phone')}</Grid>
-          <Grid size={{ xs: 12 }}>{field('address', 'Address')}</Grid>
+          <Grid size={{ xs: 12 }}>{field('address', 'Address', { multiline: true, minRows: 2 })}</Grid>
+        </FormSection>
+        <FormSection title="Opening balances" hint="What stood between you before using this system">
           <Grid size={{ xs: 12, sm: 6 }}>
             {field('opening_gold_g', 'Gold already with them', {
               type: 'number',
@@ -78,7 +82,7 @@ export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
                 label={form.is_active ? 'Active' : 'Disabled'} />
             </Grid>
           )}
-        </Grid>
+        </FormSection>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

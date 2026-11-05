@@ -34,6 +34,7 @@ import BillIcon from '@mui/icons-material/ReceiptLongOutlined';
 import CustomerIcon from '@mui/icons-material/GroupOutlined';
 import ReceiptIcon from '@mui/icons-material/RequestQuoteOutlined';
 import ReportIcon from '@mui/icons-material/AssessmentOutlined';
+import FinanceIcon from '@mui/icons-material/AccountBalanceOutlined';
 
 import { useAuth } from '../auth/AuthContext';
 import { gold, stone } from '../theme';
@@ -130,6 +131,20 @@ const NAV_CATEGORIES = [
         children: [
           { label: 'Craft Jobs', path: '/craft-jobs', perm: 'craft_jobs.view' },
           { label: 'Craftsmen', path: '/craftsmen', perm: 'craftsmen.view' },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'FINANCE',
+    items: [
+      {
+        label: 'Finance',
+        icon: FinanceIcon,
+        children: [
+          { label: 'Overview', path: '/finance', perm: 'finance.view' },
+          { label: 'Expenses', path: '/expenses', perm: 'expenses.view' },
+          { label: 'Cash & Bank', path: '/cash-bank', perm: 'finance.view' },
         ],
       },
     ],

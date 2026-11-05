@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Box, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress,
-  MenuItem, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, TextField, Tooltip,
+  Box, Button, Card, Chip, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, LinearProgress,
+  MenuItem, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, Tooltip,
   Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import DoneIcon from '@mui/icons-material/TaskAltOutlined';

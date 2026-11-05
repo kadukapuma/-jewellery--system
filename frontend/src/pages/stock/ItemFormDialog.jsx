@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment,
-  MenuItem, TextField, Typography,
+  Alert, Box, Button, Checkbox, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment,
+  MenuItem, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
+import TextField from '../../components/TextField';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -106,9 +109,9 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
       <DialogTitle>{isNew ? 'Add item' : `Edit ${item.item_code}`}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={3} sx={{ pt: 1 }}>
-          <Grid size={{ xs: 12, md: 8 }}>
-            <Grid container spacing={2}>
+        <Grid container spacing={4} sx={{ pt: 1 }}>
+          <Grid size={{ xs: 12, md: 7 }}>
+            <FormSection title="Item details">
               <Grid size={{ xs: 12, sm: 8 }}>{field('name', 'Item name', { required: true, autoFocus: true, placeholder: 'Ladies ring with stone' })}</Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 {field('item_code', 'Item code', isNew ? { placeholder: 'Auto', helperText: 'Blank = same as barcode' } : { required: true, helperText: `Barcode ${item.barcode}` })}
@@ -125,11 +128,18 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
                   children: karats.filter((k) => k.is_active || k.id === form.karat_id).map((k) => <MenuItem key={k.id} value={k.id}>{k.name}</MenuItem>),
                 })}
               </Grid>
+              <Grid size={{ xs: 12 }}>{field('description', 'Description / notes', { multiline: true, minRows: 2 })}</Grid>
+            </FormSection>
+
+            <FormSection title="Weight & charges">
               <Grid size={{ xs: 12, sm: 4 }}>{field('net_weight_g', 'Net weight', { required: true, ...grams, helperText: 'Weight of the piece' })}</Grid>
               <Grid size={{ xs: 12, sm: 4 }}>{field('wastage_g', 'Wastage', { ...grams, helperText: 'Charged to the customer' })}</Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 {field('making_charge', 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } } })}
               </Grid>
+            </FormSection>
+
+            <FormSection title="Stock">
               <Grid size={{ xs: 12, sm: 4 }}>
                 {field('stock_qty', 'Quantity in stock', { type: 'number', slotProps: { htmlInput: { min: 0, step: 1 } }, helperText: biscuit ? 'Number of biscuits' : 'Usually 1 for a single piece' })}
               </Grid>
@@ -146,57 +156,58 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
                   })}
                 </Grid>
               )}
-              <Grid size={{ xs: 12 }}>{field('description', 'Description / notes')}</Grid>
-            </Grid>
+            </FormSection>
           </Grid>
 
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Box sx={{ bgcolor: gold[50], border: `1px solid ${gold[200]}`, borderRadius: '20px', p: 2.5 }}>
-              <Typography sx={{ fontWeight: 600, mb: 1.5 }}>Price today</Typography>
-              {preview ? (
-                <>
-                  {[
-                    ['Net weight', formatWeight(form.net_weight_g)],
-                    ['+ Wastage', formatWeight(form.wastage_g || 0)],
-                    ['= Billed weight', formatWeight(preview.billed_weight_g)],
-                    ['× Rate per gram', formatMoney(gramPrice)],
-                    ['Gold value', formatMoney(preview.gold_value)],
-                    ['+ Making charge', formatMoney(preview.making_charge)],
-                  ].map(([label, value]) => (
-                    <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.4, fontSize: 14 }}>
-                      <Typography variant="body2" color="text.secondary">{label}</Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{value}</Typography>
+          <Grid size={{ xs: 12, md: 5 }}>
+            <Box sx={{ position: { md: 'sticky' }, top: 0 }}>
+              <Box sx={{ bgcolor: gold[50], border: `1px solid ${gold[200]}`, borderRadius: '20px', p: 2.5 }}>
+                <Typography sx={{ fontWeight: 600, mb: 1.5 }}>Price today</Typography>
+                {preview ? (
+                  <>
+                    {[
+                      ['Net weight', formatWeight(form.net_weight_g)],
+                      ['+ Wastage', formatWeight(form.wastage_g || 0)],
+                      ['= Billed weight', formatWeight(preview.billed_weight_g)],
+                      ['× Rate per gram', formatMoney(gramPrice)],
+                      ['Gold value', formatMoney(preview.gold_value)],
+                      ['+ Making charge', formatMoney(preview.making_charge)],
+                    ].map(([label, value]) => (
+                      <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.4, fontSize: 14 }}>
+                        <Typography variant="body2" color="text.secondary">{label}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{value}</Typography>
+                      </Box>
+                    ))}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, pt: 1, borderTop: `1px solid ${gold[200]}` }}>
+                      <Typography sx={{ fontWeight: 600 }}>Final price</Typography>
+                      <Typography sx={{ fontWeight: 700, color: gold[800] }}>{formatMoney(final)}</Typography>
                     </Box>
-                  ))}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, pt: 1, borderTop: `1px solid ${gold[200]}` }}>
-                    <Typography sx={{ fontWeight: 600 }}>Final price</Typography>
-                    <Typography sx={{ fontWeight: 700, color: gold[800] }}>{formatMoney(final)}</Typography>
-                  </Box>
-                </>
-              ) : (
-                <Typography variant="body2" sx={{ color: stone[600] }}>
-                  {form.karat_id && gramPrice === null && prices.length
-                    ? 'No gold price entered for this karat yet.'
-                    : 'Choose a karat and enter the weight to see the price at today’s rate.'}
-                </Typography>
-              )}
-            </Box>
+                  </>
+                ) : (
+                  <Typography variant="body2" sx={{ color: stone[600] }}>
+                    {form.karat_id && gramPrice === null && prices.length
+                      ? 'No gold price entered for this karat yet.'
+                      : 'Choose a karat and enter the weight to see the price at today’s rate.'}
+                  </Typography>
+                )}
+              </Box>
 
-            <Box sx={{ border: `1px solid ${stone[200]}`, borderRadius: '20px', p: 2.5, mt: 2 }}>
-              <Typography sx={{ fontWeight: 600 }}>Selling price range</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                {final === null
-                  ? 'Enter how many % above the final price. The prices appear once the weight and gold price are known.'
-                  : 'Sold at the max price; discounts can go down to the min price. 0% = the final price. As percentages, the prices follow the gold price automatically.'}
-              </Typography>
-              <PriceRangeFields
-                final={final}
-                minPercent={form.price_min_percent}
-                maxPercent={form.price_max_percent}
-                onChange={setPercent}
-                errors={errors}
-                cost={cost}
-              />
+              <Box sx={{ border: `1px solid ${stone[200]}`, borderRadius: '20px', p: 2.5, mt: 2 }}>
+                <Typography sx={{ fontWeight: 600 }}>Selling price range</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                  {final === null
+                    ? 'Enter how many % above the final price. The prices appear once the weight and gold price are known.'
+                    : 'Sold at the max price; discounts can go down to the min price. 0% = the final price. As percentages, the prices follow the gold price automatically.'}
+                </Typography>
+                <PriceRangeFields
+                  final={final}
+                  minPercent={form.price_min_percent}
+                  maxPercent={form.price_max_percent}
+                  onChange={setPercent}
+                  errors={errors}
+                  cost={cost}
+                />
+              </Box>
             </Box>
           </Grid>
         </Grid>

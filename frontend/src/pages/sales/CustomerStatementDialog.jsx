@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import api, { errorMessage } from '../../api/client';
 import { formatDate, formatMoney } from '../../utils/format';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 function balanceText(v) {
   if (v > 0) return `owes ${formatMoney(v)}`;
@@ -21,6 +23,8 @@ export default function CustomerStatementDialog({ customerId, onClose, onReceive
   useEffect(() => {
     api.get(`/customers/${customerId}/statement`).then((res) => setData(res.data)).catch((err) => setError(errorMessage(err)));
   }, [customerId]);
+
+  const { pageRows, pager } = usePagedRows(data?.entries);
 
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -44,11 +48,13 @@ export default function CustomerStatementDialog({ customerId, onClose, onReceive
                 </TableRow>
               </TableHead>
               <TableBody>
-                <TableRow>
-                  <TableCell colSpan={4} sx={{ color: 'text.secondary' }}>Opening balance</TableCell>
-                  <TableCell align="right">{formatMoney(data.opening_balance)}</TableCell>
-                </TableRow>
-                {data.entries.map((e) => (
+                {pager.page === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} sx={{ color: 'text.secondary' }}>Opening balance</TableCell>
+                    <TableCell align="right">{formatMoney(data.opening_balance)}</TableCell>
+                  </TableRow>
+                )}
+                {pageRows.map((e) => (
                   <TableRow key={`${e.type}-${e.id}`} hover onClick={e.type === 'sale' ? () => navigate(`/sales/${e.id}`) : undefined}
                     sx={{ cursor: e.type === 'sale' ? 'pointer' : 'default' }}>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</TableCell>
@@ -63,6 +69,7 @@ export default function CustomerStatementDialog({ customerId, onClose, onReceive
                 )}
               </TableBody>
             </Table>
+            <TablePager {...pager} />
           </TableContainer>
         )}
       </DialogContent>

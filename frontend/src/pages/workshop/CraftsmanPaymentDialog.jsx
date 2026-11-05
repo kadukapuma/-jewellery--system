@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, TextField, Typography,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';

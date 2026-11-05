@@ -20,6 +20,9 @@ export const MODULE_LABELS = {
   tags: 'Barcode Tags',
   tag_templates: 'Tag Templates',
   reports: 'Reports',
+  finance: 'Finance',
+  expenses: 'Expenses',
+  cash_entries: 'Cash & Bank Entries',
   settings: 'Settings',
   audit_logs: 'Activity Log',
 };

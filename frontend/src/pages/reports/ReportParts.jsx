@@ -2,6 +2,7 @@ import { Box, Button, ButtonBase, Card, Table, TableBody, TableCell, TableContai
 import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
 import { ink, stone } from '../../theme';
 import { todayYmd } from '../../utils/payments';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -41,7 +42,11 @@ export function CsvButton({ onClick }) {
 }
 
 // A titled card holding a simple table. columns: [{ label, align?, render: (row) => node }]
+// Paged on screen; every row still prints (rows off the current page are only hidden on screen).
 export function ReportTable({ title, columns, rows, footer, onCsv, empty = 'Nothing in this period', maxHeight }) {
+  const { pager } = usePagedRows(rows);
+  const first = pager.page * pager.rowsPerPage;
+  const offPage = (i) => i < first || i >= first + pager.rowsPerPage;
   return (
     <Card sx={{ mb: 2.5, breakInside: 'avoid' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', px: 2, pt: 1.5, pb: 0.5 }}>
@@ -55,7 +60,7 @@ export function ReportTable({ title, columns, rows, footer, onCsv, empty = 'Noth
           </TableHead>
           <TableBody>
             {rows.map((r, i) => (
-              <TableRow key={r.id ?? r.key ?? i} hover>
+              <TableRow key={r.id ?? r.key ?? i} hover sx={offPage(i) ? { '@media screen': { display: 'none' } } : undefined}>
                 {columns.map((c) => <TableCell key={c.label} align={c.align} sx={{ whiteSpace: c.nowrap ? 'nowrap' : undefined }}>{c.render(r)}</TableCell>)}
               </TableRow>
             ))}
@@ -70,6 +75,7 @@ export function ReportTable({ title, columns, rows, footer, onCsv, empty = 'Noth
           </TableBody>
         </Table>
       </TableContainer>
+      {rows.length > 0 && <TablePager {...pager} />}
     </Card>
   );
 }

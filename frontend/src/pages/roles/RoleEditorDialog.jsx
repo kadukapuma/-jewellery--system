@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid,
-  LinearProgress, Paper, Stack, Switch, TextField, Typography,
+  Alert, Box, Button, Checkbox, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, LinearProgress,
+  Paper, Stack, Switch, TextField, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { actionLabel, groupPermissions } from '../../utils/permissions';

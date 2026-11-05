@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, FormGroup, Grid,
-  InputAdornment, MenuItem, Switch, TextField, Typography,
+  Alert, Box, Button, Checkbox, DialogActions, DialogContent, DialogTitle, FormControlLabel, FormGroup, Grid,
+  InputAdornment, MenuItem, Switch, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
+import TextField from '../../components/TextField';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { stone } from '../../theme';
@@ -70,7 +73,7 @@ export default function TagTemplateDialog({ template, allFields, shopName, onClo
       <DialogTitle>{isNew ? 'Add tag template' : `Edit ${template.name}`}</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
+        <FormSection title="Tag">
           <Grid size={{ xs: 12, sm: 6 }}>
             <TextField label="Name" required value={form.name} onChange={set('name')} placeholder="Ring tag 75×12" error={!!errors.name} helperText={errors.name} />
           </Grid>
@@ -93,8 +96,9 @@ export default function TagTemplateDialog({ template, allFields, shopName, onClo
               label={template?.is_default ? 'Default template' : 'Use as default'}
             />
           </Grid>
+        </FormSection>
+        <FormSection title="Print on the tag" hint="Tick what should appear on each tag">
           <Grid size={{ xs: 12 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>Print on the tag</Typography>
             <FormGroup row>
               {allFields.map((f) => (
                 <FormControlLabel key={f} label={FIELD_LABELS[f]}
@@ -103,8 +107,9 @@ export default function TagTemplateDialog({ template, allFields, shopName, onClo
             </FormGroup>
             {errors.fields && <Typography variant="caption" color="error">{errors.fields}</Typography>}
           </Grid>
+        </FormSection>
+        <FormSection title="Preview" hint="Enlarged, with a sample item">
           <Grid size={{ xs: 12 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Preview (enlarged)</Typography>
             <Box sx={{ bgcolor: stone[50], borderRadius: '20px', p: 2, overflow: 'auto', display: 'grid', placeItems: 'center', minHeight: 80 }}>
               {sizeOk && form.fields.length > 0 ? (
                 <Box sx={{ width: `${w * PREVIEW_SCALE}mm`, height: `${h * PREVIEW_SCALE}mm`, maxWidth: '100%' }}>
@@ -117,7 +122,7 @@ export default function TagTemplateDialog({ template, allFields, shopName, onClo
               )}
             </Box>
           </Grid>
-        </Grid>
+        </FormSection>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

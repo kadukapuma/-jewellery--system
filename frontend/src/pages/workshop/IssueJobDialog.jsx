@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, InputAdornment, MenuItem, TextField,
-  ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, Grid, InputAdornment, MenuItem, ToggleButton,
+  ToggleButtonGroup, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
+import TextField from '../../components/TextField';
 import SearchIcon from '@mui/icons-material/Search';
 import ListIcon from '@mui/icons-material/ManageSearch';
 import api, { errorMessage, fieldErrors } from '../../api/client';
@@ -185,42 +188,48 @@ export default function IssueJobDialog({ onClose, onSaved }) {
       <DialogTitle>Give work to a craftsman</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
+        <FormSection title="Type of work">
           <Grid size={{ xs: 12 }}>
             <ToggleButtonGroup size="small" exclusive fullWidth value={jobType} onChange={(e, v) => changeType(v)}>
               <ToggleButton value="new">Make a new piece</ToggleButton>
               <ToggleButton value="make_item">Make a saved item</ToggleButton>
               <ToggleButton value="rework">Repair / rework</ToggleButton>
             </ToggleButtonGroup>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
               {jobType === 'new' && 'The finished piece becomes a new item.'}
               {jobType === 'make_item' && 'Make a piece of an item already saved. It fills in an item with 0 in stock, or adds 1 more to its stock.'}
               {jobType === 'rework' && 'A saved piece goes to the craftsman and comes back as the same item, same barcode.'}
             </Typography>
           </Grid>
+        </FormSection>
 
-          {usesSaved && (
-            <Grid size={{ xs: 12 }}>
-              <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <TextField label="Saved item – barcode or code" value={savedLookup}
-                  onChange={(e) => { setSavedLookup(e.target.value); setSavedItem(null); setErrors((x) => ({ ...x, item_id: undefined })); }}
-                  onKeyDown={(e) => e.key === 'Enter' && findItem(savedLookup, chooseSaved, 'item_id')}
-                  onBlur={() => !savedItem && findItem(savedLookup, chooseSaved, 'item_id')}
-                  error={!!errors.item_id} helperText={errors.item_id || 'Scan or type, then Enter'} sx={{ maxWidth: 260 }}
-                  slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }} />
-                <Button variant="outlined" startIcon={<ListIcon />} onClick={() => setPicking(true)} sx={{ height: 40 }}>Select item</Button>
-                {savedItem && (
-                  <GoldBox item={savedItem}>
-                    {savedItem.category_name} · {savedItem.karat_name}
-                    {rework ? ` · ${formatWeight(savedItem.net_weight_g)} · leaves stock until it comes back`
-                      : savedItem.stock_qty > 0 ? ` · ${savedItem.stock_qty} in stock · the finished piece adds 1 more`
-                        : ' · weight is filled in when it comes back'}
-                  </GoldBox>
-                )}
-              </Box>
+        {usesSaved && (
+          <FormSection title={rework ? 'Piece to repair' : 'Saved item'}>
+            <Grid size={{ xs: 12, sm: 5 }}>
+              <TextField label="Barcode or code" value={savedLookup}
+                onChange={(e) => { setSavedLookup(e.target.value); setSavedItem(null); setErrors((x) => ({ ...x, item_id: undefined })); }}
+                onKeyDown={(e) => e.key === 'Enter' && findItem(savedLookup, chooseSaved, 'item_id')}
+                onBlur={() => !savedItem && findItem(savedLookup, chooseSaved, 'item_id')}
+                error={!!errors.item_id} helperText={errors.item_id || 'Scan or type, then Enter'}
+                slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }} />
             </Grid>
-          )}
+            <Grid size={{ xs: 12, sm: 'auto' }}>
+              <Button variant="outlined" startIcon={<ListIcon />} onClick={() => setPicking(true)} sx={{ height: 40 }}>Select item</Button>
+            </Grid>
+            {savedItem && (
+              <Grid size={{ xs: 12 }}>
+                <GoldBox item={savedItem}>
+                  {savedItem.category_name} · {savedItem.karat_name}
+                  {rework ? ` · ${formatWeight(savedItem.net_weight_g)} · leaves stock until it comes back`
+                    : savedItem.stock_qty > 0 ? ` · ${savedItem.stock_qty} in stock · the finished piece adds 1 more`
+                      : ' · weight is filled in when it comes back'}
+                </GoldBox>
+              </Grid>
+            )}
+          </FormSection>
+        )}
 
+        <FormSection title="Craftsman & piece">
           <Grid size={{ xs: 12, sm: 6 }}>
             {field('craftsman_id', 'Craftsman', { select: true, required: true, autoFocus: !usesSaved, children: craftsmen.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>) })}
           </Grid>
@@ -233,53 +242,57 @@ export default function IssueJobDialog({ onClose, onSaved }) {
           <Grid size={{ xs: 12, sm: 6 }}>
             {field('description', rework ? 'Work to do' : 'Description', { placeholder: rework ? 'Resize to 7, polish' : 'Ladies ring, size 7' })}
           </Grid>
+        </FormSection>
 
+        <FormSection title="Gold given">
           {!rework && (
+            <Grid size={{ xs: 12 }}>
+              <ToggleButtonGroup size="small" exclusive value={source} onChange={(e, v) => { if (v) { setSource(v); setSourceItem(null); } }}>
+                <ToggleButton value="loose">Loose gold</ToggleButton>
+                <ToggleButton value="stock">A biscuit / piece from stock</ToggleButton>
+              </ToggleButtonGroup>
+            </Grid>
+          )}
+          {!rework && source === 'stock' && (
             <>
-              <Grid size={{ xs: 12 }}>
-                <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>Gold given</Typography>
-                <ToggleButtonGroup size="small" exclusive value={source} onChange={(e, v) => { if (v) { setSource(v); setSourceItem(null); } }}>
-                  <ToggleButton value="loose">Loose gold</ToggleButton>
-                  <ToggleButton value="stock">A biscuit / piece from stock</ToggleButton>
-                </ToggleButtonGroup>
+              <Grid size={{ xs: 12, sm: 5 }}>
+                <TextField label="Barcode or item code" value={lookup} onChange={(e) => { setLookup(e.target.value); setSourceItem(null); }}
+                  onKeyDown={(e) => e.key === 'Enter' && findSource()} onBlur={findSource}
+                  error={!!errors.source} helperText={errors.source || 'Scan or type, then Enter'}
+                  slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }} />
               </Grid>
-              {source === 'stock' && (
-                <Grid size={{ xs: 12 }}>
-                  <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                    <TextField label="Barcode or item code" value={lookup} onChange={(e) => { setLookup(e.target.value); setSourceItem(null); }}
-                      onKeyDown={(e) => e.key === 'Enter' && findSource()} onBlur={findSource}
-                      error={!!errors.source} helperText={errors.source || 'Scan or type, then Enter'} sx={{ maxWidth: 240 }}
-                      slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }} />
-                    {sourceItem && (
-                      <GoldBox item={sourceItem}>
-                        {sourceItem.karat_name} · {formatWeight(sourceItem.net_weight_g)} · one unit leaves stock ({sourceItem.stock_qty} now)
-                      </GoldBox>
-                    )}
-                  </Box>
+              {sourceItem && (
+                <Grid size={{ xs: 12, sm: 7 }}>
+                  <GoldBox item={sourceItem}>
+                    {sourceItem.karat_name} · {formatWeight(sourceItem.net_weight_g)} · one unit leaves stock ({sourceItem.stock_qty} now)
+                  </GoldBox>
                 </Grid>
               )}
             </>
           )}
-          <Grid size={{ xs: 6 }}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             {field('karat_id', 'Karat', { select: true, required: !usesSaved, disabled: !!sourceItem || usesSaved, children: karats.map((k) => <MenuItem key={k.id} value={k.id}>{k.name}</MenuItem>) })}
           </Grid>
           {rework ? (
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               {field('extra_weight_g', 'Extra gold added', {
                 ...grams, placeholder: '0',
                 helperText: reworkTotal !== null ? `Total given ${formatWeight(reworkTotal)} (piece ${formatWeight(savedItem.net_weight_g)})` : 'Loose gold, if any',
               })}
             </Grid>
           ) : (
-            <Grid size={{ xs: 6 }}>{field('issued_weight_g', 'Gold weight given', { required: true, ...grams })}</Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>{field('issued_weight_g', 'Gold weight given', { required: true, ...grams })}</Grid>
           )}
-          <Grid size={{ xs: 6 }}>
+        </FormSection>
+
+        <FormSection title="Charges">
+          <Grid size={{ xs: 12, sm: 6 }}>
             {field('craftsman_fee', 'Craftsman fee', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'What you pay them (can change later)' })}
           </Grid>
-          <Grid size={{ xs: 6 }}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             {field('making_charge', rework ? 'Making charge added' : 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'Charged to the customer' })}
           </Grid>
-        </Grid>
+        </FormSection>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

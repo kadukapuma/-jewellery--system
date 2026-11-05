@@ -12,6 +12,7 @@ import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import CategoryFormDialog, { CATEGORY_TYPES } from './CategoryFormDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function CategoriesPage() {
   const { can } = useAuth();
@@ -50,6 +51,8 @@ export default function CategoriesPage() {
     }
   };
 
+  const { pageRows, pager } = usePagedRows(categories);
+
   return (
     <>
       <PageHeader
@@ -74,7 +77,7 @@ export default function CategoriesPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {categories.map((c) => (
+              {pageRows.map((c) => (
                 <TableRow key={c.id} hover>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{c.name}</Typography>
@@ -101,6 +104,7 @@ export default function CategoriesPage() {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </Card>
 

@@ -19,6 +19,7 @@ import { formatDateTime } from '../../utils/format';
 import UserFormDialog from './UserFormDialog';
 import ResetPasswordDialog from './ResetPasswordDialog';
 import UserPermissionsDialog from './UserPermissionsDialog';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 function StatusChip({ user }) {
   if (!user.is_active) return <Chip size="small" label="Disabled" />;
@@ -86,6 +87,8 @@ export default function UsersPage() {
     }
   };
 
+  const { pageRows, pager } = usePagedRows(filtered);
+
   return (
     <>
       <PageHeader
@@ -120,7 +123,7 @@ export default function UsersPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.map((u) => (
+              {pageRows.map((u) => (
                 <TableRow key={u.id} hover>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{u.name}</Typography>
@@ -156,6 +159,7 @@ export default function UsersPage() {
               )}
             </TableBody>
           </Table>
+          <TablePager {...pager} />
         </TableContainer>
       </Card>
 

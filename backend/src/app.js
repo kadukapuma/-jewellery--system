@@ -25,6 +25,8 @@ import customersRoutes from './modules/customers/customers.routes.js';
 import salesRoutes from './modules/sales/sales.routes.js';
 import customerPaymentsRoutes from './modules/customer-payments/customer-payments.routes.js';
 import reportsRoutes from './modules/reports/reports.routes.js';
+import financeRoutes from './modules/finance/finance.routes.js';
+import expensesRoutes from './modules/expenses/expenses.routes.js';
 
 const app = express();
 
@@ -59,6 +61,8 @@ app.use('/api/customers', secured, customersRoutes);
 app.use('/api/sales', secured, salesRoutes);
 app.use('/api/customer-payments', secured, customerPaymentsRoutes);
 app.use('/api/reports', secured, reportsRoutes);
+app.use('/api/finance', secured, financeRoutes);
+app.use('/api/expenses', secured, expensesRoutes);
 
 app.use((req, res) => res.status(404).json({ message: 'Not found' }));
 app.use(errorHandler);

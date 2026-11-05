@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, Table, TableBody, TableCell,
-  TableHead, TableRow, TextField, Typography,
+  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, Table, TableBody, TableCell,
+  TableHead, TableRow, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import FormSection from '../../components/FormSection';
+import TextField from '../../components/TextField';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { stone } from '../../theme';
 import CustomerPicker from './CustomerPicker';
+import TablePager, { usePagedRows } from '../../components/TablePager';
 
 // Money from a customer for credit bills / instalments. Settles the chosen bill first, then the oldest.
 export default function ReceivePaymentDialog({ customer: initialCustomer, sale, onClose, onSaved }) {
@@ -79,52 +83,67 @@ export default function ReceivePaymentDialog({ customer: initialCustomer, sale, 
     <TextField label={label} value={form[name]} onChange={set(name)} {...props} error={!!errors[name]} helperText={errors[name] || props.helperText} />
   );
 
+  const { pageRows, pager } = usePagedRows(plan.rows);
+
   return (
-    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         Receive payment
         {sale && <Typography variant="body2" color="text.secondary">For {sale.invoice_no} · balance {formatMoney(sale.balance)}</Typography>}
       </DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Grid container spacing={2} sx={{ pt: 1 }}>
-          <Grid size={{ xs: 12 }}>
-            {initialCustomer || sale
-              ? <TextField label="Customer" value={customer?.name || ''} disabled />
-              : <CustomerPicker value={customer} onChange={setCustomer} />}
+        <Grid container spacing={4}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FormSection title="From">
+              <Grid size={{ xs: 12 }}>
+                {initialCustomer || sale
+                  ? <TextField label="Customer" value={customer?.name || ''} disabled />
+                  : <CustomerPicker value={customer} onChange={setCustomer} />}
+              </Grid>
+            </FormSection>
+            <FormSection title="Payment">
+              <Grid size={{ xs: 12, sm: 6 }}>{field('amount', 'Amount', { required: true, type: 'number', autoFocus: true, slotProps: { htmlInput: { min: 0, step: 'any' } } })}</Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>{field('payment_date', 'Date', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                {field('method', 'Paid by', { select: true, children: Object.entries(PAYMENT_METHODS).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>) })}
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>{field('reference_no', form.method === 'cheque' ? 'Cheque no.' : 'Reference no.')}</Grid>
+              {form.method === 'cheque' && <Grid size={{ xs: 12, sm: 6 }}>{field('cheque_date', 'Cheque date', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>}
+              <Grid size={{ xs: 12 }}>{field('notes', 'Note', { multiline: true, minRows: 2 })}</Grid>
+            </FormSection>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>{field('amount', 'Amount', { required: true, type: 'number', autoFocus: true, slotProps: { htmlInput: { min: 0, step: 'any' } } })}</Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>{field('payment_date', 'Date', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            {field('method', 'Paid by', { select: true, children: Object.entries(PAYMENT_METHODS).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>) })}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ bgcolor: stone[50], borderRadius: '20px', p: 2.5, height: '100%' }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>This payment will settle</Typography>
+              {!(Number(form.amount) > 0 && customer) ? (
+                <Typography variant="body2" color="text.secondary">Choose the customer and enter the amount to see which bills it pays.</Typography>
+              ) : plan.rows.length ? (
+                <>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow><TableCell>Bill</TableCell><TableCell>Date</TableCell><TableCell align="right">Balance</TableCell><TableCell align="right">Pays</TableCell></TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {pageRows.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell>{s.invoice_no}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(s.sale_date)}</TableCell>
+                          <TableCell align="right">{formatMoney(s.balance)}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(s.share)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <TablePager {...pager} rowsPerPageOptions={[]} />
+                </>
+              ) : <Typography variant="body2" color="text.secondary">No unpaid bills.</Typography>}
+              {Number(form.amount) > 0 && customer && plan.advance > 0 && (
+                <Alert severity="info" sx={{ mt: 1 }}>{formatMoney(plan.advance)} will be kept as the customer’s advance for the next bill.</Alert>
+              )}
+            </Box>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>{field('reference_no', form.method === 'cheque' ? 'Cheque no.' : 'Reference no.')}</Grid>
-          {form.method === 'cheque' && <Grid size={{ xs: 12, sm: 6 }}>{field('cheque_date', 'Cheque date', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>}
-          <Grid size={{ xs: 12 }}>{field('notes', 'Note')}</Grid>
         </Grid>
-        {Number(form.amount) > 0 && customer && (
-          <Box sx={{ mt: 2, bgcolor: stone[50], borderRadius: '18px', p: 2 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>This payment will settle</Typography>
-            {plan.rows.length ? (
-              <Table size="small">
-                <TableHead>
-                  <TableRow><TableCell>Bill</TableCell><TableCell>Date</TableCell><TableCell align="right">Balance</TableCell><TableCell align="right">Pays</TableCell></TableRow>
-                </TableHead>
-                <TableBody>
-                  {plan.rows.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell>{s.invoice_no}</TableCell>
-                      <TableCell>{formatDate(s.sale_date)}</TableCell>
-                      <TableCell align="right">{formatMoney(s.balance)}</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(s.share)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : <Typography variant="body2" color="text.secondary">No unpaid bills.</Typography>}
-            {plan.advance > 0 && <Alert severity="info" sx={{ mt: 1 }}>{formatMoney(plan.advance)} will be kept as the customer’s advance for the next bill.</Alert>}
-          </Box>
-        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

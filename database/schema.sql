@@ -588,6 +588,67 @@ CREATE TABLE craftsman_payments (
 );
 
 -- =====================================================================
+-- FINANCE  (shop expenses + cash / bank accounts)
+--   Account of a money movement: method 'cash' -> Cash, anything else -> Bank.
+--   Cash balance / Bank balance = every active receipt - every active payment
+--   - every active expense +/- cash_entries (opening, capital, drawings, transfers).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 22a. EXPENSE CATEGORIES (Rent, Salaries, Electricity ...)
+-- ---------------------------------------------------------------------
+CREATE TABLE expense_categories (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(100) NOT NULL UNIQUE,
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- 22b. EXPENSES (shop running costs)
+-- ---------------------------------------------------------------------
+CREATE TABLE expenses (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  expense_no           VARCHAR(30) NOT NULL UNIQUE,     -- EXP-000001
+  expense_date         DATE NOT NULL,
+  category_id          INT UNSIGNED NOT NULL,
+  paid_to              VARCHAR(150) NULL,
+  amount               DECIMAL(14,2) NOT NULL,
+  method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
+  reference_no         VARCHAR(50) NULL,
+  notes                VARCHAR(255) NULL,
+  status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_exp_category FOREIGN KEY (category_id) REFERENCES expense_categories(id),
+  CONSTRAINT fk_exp_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT chk_exp_amount  CHECK (amount > 0),
+  INDEX idx_exp_date (expense_date)
+);
+
+-- ---------------------------------------------------------------------
+-- 22c. CASH ENTRIES (money that is not a sale, purchase or expense)
+--      opening / capital_in -> + account   drawing -> - account
+--      deposit    = cash -> bank           withdrawal = bank -> cash   (account ignored)
+-- ---------------------------------------------------------------------
+CREATE TABLE cash_entries (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  entry_no             VARCHAR(30) NOT NULL UNIQUE,     -- CSH-000001
+  entry_date           DATE NOT NULL,
+  entry_type           ENUM('opening','capital_in','drawing','deposit','withdrawal') NOT NULL,
+  account              ENUM('cash','bank') NOT NULL DEFAULT 'cash',
+  amount               DECIMAL(14,2) NOT NULL,
+  notes                VARCHAR(255) NULL,
+  status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ce_user    FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT chk_ce_amount CHECK (amount > 0),
+  INDEX idx_ce_date (entry_date)
+);
+
+-- =====================================================================
 -- BARCODE / TAG PRINTING
 -- =====================================================================
 
@@ -704,7 +765,13 @@ INSERT INTO permissions (code, module, action, description, sort_order) VALUES
   ('tag_templates.edit',      'tag_templates','edit',        'Create and change tag layouts',            281),
   ('reports.customer_balances','reports',    'customer_balances', 'Customer outstanding report',         224),
   ('reports.supplier_balances','reports',    'supplier_balances', 'Supplier outstanding report',         225),
-  ('reports.craftsman_balances','reports',   'craftsman_balances','Craftsman gold and cash report',      226);
+  ('reports.craftsman_balances','reports',   'craftsman_balances','Craftsman gold and cash report',      226),
+  ('finance.view',            'finance',     'view',         'See money in / out and cash & bank balances', 290),
+  ('expenses.view',           'expenses',    'view',         'See shop expenses',                        291),
+  ('expenses.create',         'expenses',    'create',       'Record a shop expense',                    292),
+  ('expenses.cancel',         'expenses',    'cancel',       'Cancel a shop expense',                    293),
+  ('cash_entries.create',     'cash_entries','create',       'Opening balance, capital, drawings, transfers', 294),
+  ('cash_entries.cancel',     'cash_entries','cancel',       'Cancel a cash / bank entry',               295);
 
 -- Manager: everything except users, roles, settings and audit
 INSERT INTO role_permissions (role_id, permission_id)
@@ -742,7 +809,13 @@ INSERT INTO document_sequences (code, prefix) VALUES
   ('SPY',  'SPY-'),   -- supplier payments
   ('JOB',  'JOB-'),   -- craftsman jobs
   ('CPY',  'CPY-'),   -- craftsman payments
+  ('EXP',  'EXP-'),   -- shop expenses
+  ('CSH',  'CSH-'),   -- cash / bank entries
   ('ITEM', 'JW');     -- item barcodes: JW000001
+
+INSERT INTO expense_categories (name) VALUES
+  ('Rent'), ('Salaries'), ('Electricity'), ('Water'), ('Telephone & Internet'), ('Transport'),
+  ('Repairs & Maintenance'), ('Stationery'), ('Bank Charges'), ('Other');
 
 -- Default jewellery tag (dumbbell / rat-tail label)
 INSERT INTO tag_templates (name, width_mm, height_mm, barcode_type, fields, is_default) VALUES

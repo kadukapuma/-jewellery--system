@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, MenuItem, Stack, TextField, Typography,
+  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, LinearProgress, MenuItem, Stack, Typography,
 } from '@mui/material';
+import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import PrintIcon from '@mui/icons-material/PrintOutlined';
 import api, { errorMessage } from '../../api/client';
 import { useNotify } from '../../components/Notify';

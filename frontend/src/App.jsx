@@ -27,6 +27,9 @@ import CustomersPage from './pages/sales/CustomersPage';
 import CustomerPaymentsPage from './pages/sales/CustomerPaymentsPage';
 import SettingsPage from './pages/admin/SettingsPage';
 import ReportsPage from './pages/reports/ReportsPage';
+import FinanceOverviewPage from './pages/finance/FinanceOverviewPage';
+import ExpensesPage from './pages/finance/ExpensesPage';
+import CashBankPage from './pages/finance/CashBankPage';
 
 export default function App() {
   return (
@@ -55,7 +58,10 @@ export default function App() {
           <Route path="customers" element={<RequirePermission perm="customers.view"><CustomersPage /></RequirePermission>} />
           <Route path="customer-payments" element={<RequirePermission perm="customer_payments.view"><CustomerPaymentsPage /></RequirePermission>} />
           <Route path="reports" element={<RequirePermission perm={['reports.sales', 'reports.profit', 'reports.stock', 'reports.wastage', 'reports.customer_balances', 'reports.supplier_balances', 'reports.craftsman_balances']}><ReportsPage /></RequirePermission>} />
-          <Route path="settings" element={<RequirePermission perm="settings.edit"><SettingsPage /></RequirePermission>} />
+          <Route path="finance" element={<RequirePermission perm="finance.view"><FinanceOverviewPage /></RequirePermission>} />
+          <Route path="expenses" element={<RequirePermission perm="expenses.view"><ExpensesPage /></RequirePermission>} />
+          <Route path="cash-bank" element={<RequirePermission perm="finance.view"><CashBankPage /></RequirePermission>} />
+          <Route path="settings"element={<RequirePermission perm="settings.edit"><SettingsPage /></RequirePermission>} />
           <Route path="users" element={<RequirePermission perm="users.view"><UsersPage /></RequirePermission>} />
           <Route path="roles" element={<RequirePermission perm="roles.view"><RolesPage /></RequirePermission>} />
           <Route path="activity" element={<RequirePermission perm="audit_logs.view"><ActivityPage /></RequirePermission>} />
