@@ -95,6 +95,7 @@ const NAV_CATEGORIES = [
           { label: 'Item Categories', path: '/categories', perm: 'categories.view' },
           { label: 'Karats', path: '/karats', perm: 'karats.view' },
           { label: 'Craftsmen', path: '/craftsmen', perm: 'craftsmen.view' },
+          { label: 'Tag Templates', path: '/tag-templates', perm: 'tag_templates.edit' },
         ],
       },
     ],
@@ -108,7 +109,6 @@ const NAV_CATEGORIES = [
         children: [
           { label: 'Items', path: '/items', perm: 'items.view' },
           { label: 'Stock History', path: '/stock-history', perm: 'items.view' },
-          { label: 'Tag Templates', path: '/tag-templates', perm: 'tag_templates.edit' },
         ],
       },
     ],
