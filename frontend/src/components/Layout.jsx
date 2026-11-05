@@ -35,6 +35,7 @@ import CustomerIcon from '@mui/icons-material/GroupOutlined';
 import ReceiptIcon from '@mui/icons-material/RequestQuoteOutlined';
 import ReportIcon from '@mui/icons-material/AssessmentOutlined';
 import FinanceIcon from '@mui/icons-material/AccountBalanceOutlined';
+import MasterIcon from '@mui/icons-material/FolderSharedOutlined';
 
 import { useAuth } from '../auth/AuthContext';
 import { gold, stone } from '../theme';
@@ -66,48 +67,47 @@ const NAV_CATEGORIES = [
         icon: DashboardIcon,
       },
       {
+        label: 'Gold Prices',
+        path: '/gold-prices',
+        icon: PriceIcon,
+        perm: 'gold_prices.view',
+      },
+      {
         label: 'Sales',
         icon: PosIcon,
         children: [
           { label: 'New Sale', path: '/pos', perm: 'sales.create' },
           { label: 'Bills', path: '/sales', perm: 'sales.view' },
-          { label: 'Customers', path: '/customers', perm: 'customers.view' },
           { label: 'Receipts', path: '/customer-payments', perm: 'customer_payments.view' },
-          {
-            label: 'Reports',
-            path: '/reports',
-            perm: [
-              'reports.sales',
-              'reports.profit',
-              'reports.stock',
-              'reports.wastage',
-              'reports.customer_balances',
-              'reports.supplier_balances',
-              'reports.craftsman_balances',
-            ],
-          },
         ],
       },
     ],
   },
   {
-    title: 'INVENTORY & PRICING',
+    title: 'MASTER DATA',
     items: [
       {
-        label: 'Pricing',
-        icon: PriceIcon,
+        label: 'Master Forms',
+        icon: MasterIcon,
         children: [
-          { label: 'Gold Prices', path: '/gold-prices', perm: 'gold_prices.view' },
+          { label: 'Customers', path: '/customers', perm: 'customers.view' },
+          { label: 'Suppliers', path: '/suppliers', perm: 'suppliers.view' },
+          { label: 'Item Categories', path: '/categories', perm: 'categories.view' },
           { label: 'Karats', path: '/karats', perm: 'karats.view' },
+          { label: 'Craftsmen', path: '/craftsmen', perm: 'craftsmen.view' },
         ],
       },
+    ],
+  },
+  {
+    title: 'INVENTORY',
+    items: [
       {
         label: 'Stock',
         icon: ItemsIcon,
         children: [
           { label: 'Items', path: '/items', perm: 'items.view' },
           { label: 'Stock History', path: '/stock-history', perm: 'items.view' },
-          { label: 'Categories', path: '/categories', perm: 'categories.view' },
           { label: 'Tag Templates', path: '/tag-templates', perm: 'tag_templates.edit' },
         ],
       },
@@ -121,7 +121,6 @@ const NAV_CATEGORIES = [
         icon: PurchaseIcon,
         children: [
           { label: 'Purchases', path: '/purchases', perm: 'purchases.view' },
-          { label: 'Suppliers', path: '/suppliers', perm: 'suppliers.view' },
           { label: 'Supplier Payments', path: '/supplier-payments', perm: 'supplier_payments.view' },
         ],
       },
@@ -130,7 +129,6 @@ const NAV_CATEGORIES = [
         icon: CraftIcon,
         children: [
           { label: 'Craft Jobs', path: '/craft-jobs', perm: 'craft_jobs.view' },
-          { label: 'Craftsmen', path: '/craftsmen', perm: 'craftsmen.view' },
         ],
       },
     ],
@@ -152,6 +150,20 @@ const NAV_CATEGORIES = [
   {
     title: 'SYSTEM',
     items: [
+      {
+        label: 'Reports',
+        path: '/reports',
+        icon: ReportIcon,
+        perm: [
+          'reports.sales',
+          'reports.profit',
+          'reports.stock',
+          'reports.wastage',
+          'reports.customer_balances',
+          'reports.supplier_balances',
+          'reports.craftsman_balances',
+        ],
+      },
       {
         label: 'Administration',
         icon: ShieldIcon,

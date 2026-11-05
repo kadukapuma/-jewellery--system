@@ -52,7 +52,7 @@ export default function ReportsPage() {
     setData(null);
     api
       .get(`/reports/${current.key}`, { params: current.dated ? range : {} })
-      .then((res) => active && setData(res.data))
+      .then((res) => active && setData({ key: current.key, report: res.data }))
       .catch((err) => active && setError(errorMessage(err)))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
@@ -60,6 +60,8 @@ export default function ReportsPage() {
 
   if (!current) return <Alert severity="info">You do not have access to any reports.</Alert>;
   const { Component } = current;
+  // Only show data fetched for the selected tab; right after a tab switch it still holds the previous report.
+  const report = data?.key === current.key ? data.report : null;
 
   return (
     <>
@@ -67,7 +69,7 @@ export default function ReportsPage() {
       <PageHeader
         title="Reports"
         subtitle="Sales, profit, stock, wastage and balances"
-        actions={<Button className="no-print" variant="outlined" startIcon={<PrintIcon />} onClick={() => window.print()} disabled={!data}>Print</Button>}
+        actions={<Button className="no-print" variant="outlined" startIcon={<PrintIcon />} onClick={() => window.print()} disabled={!report}>Print</Button>}
       />
       <Tabs className="no-print" value={current.key} onChange={(e, v) => setParams({ r: v })} variant="scrollable" sx={{ mb: 2 }}>
         {allowed.map((r) => <Tab key={r.key} value={r.key} label={r.label} />)}
@@ -79,7 +81,7 @@ export default function ReportsPage() {
         <Typography sx={{ display: 'none', '@media print': { display: 'block' }, fontWeight: 700, fontSize: 20, mb: 2 }}>
           {current.label} report{current.dated ? ` · ${formatDate(range.from)} – ${formatDate(range.to)}` : ` · ${formatDate(new Date().toISOString().slice(0, 10))}`}
         </Typography>
-        {data && <Component data={data} />}
+        {report && <Component data={report} />}
       </Box>
     </>
   );
