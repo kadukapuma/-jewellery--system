@@ -1,3 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Load backend/.env when the app is started without --env-file (e.g. by a hosting panel).
+// Values already set in the environment win.
+const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env');
+if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+
 function required(name) {
   const value = process.env[name];
   if (value === undefined || value === '') {

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import { env } from './config/env.js';
@@ -63,6 +66,14 @@ app.use('/api/customer-payments', secured, customerPaymentsRoutes);
 app.use('/api/reports', secured, reportsRoutes);
 app.use('/api/finance', secured, financeRoutes);
 app.use('/api/expenses', secured, expensesRoutes);
+
+// On the server, the API also serves the built React app (frontend/dist), so one Node app runs everything.
+// Any non-API page (e.g. /finance after a refresh) gets index.html and React Router takes over.
+const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../frontend/dist');
+if (fs.existsSync(webRoot)) {
+  app.use(express.static(webRoot));
+  app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(webRoot, 'index.html')));
+}
 
 app.use((req, res) => res.status(404).json({ message: 'Not found' }));
 app.use(errorHandler);
