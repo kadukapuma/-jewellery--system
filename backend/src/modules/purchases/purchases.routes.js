@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
@@ -140,6 +141,7 @@ router.post('/', requirePermission('purchases.create'), async (req, res) => {
   }
 
   const id = await withTransaction(async (conn) => {
+    await assertDayOpen(conn, data.purchase_date);
     const [[supplier]] = await conn.query('SELECT id, is_active, credit_days FROM suppliers WHERE id = ?', [data.supplier_id]);
     if (!supplier?.is_active) throw new HttpError(400, 'Choose an active supplier');
 
@@ -240,6 +242,7 @@ router.delete('/:id', requirePermission('purchases.delete'), adminApproval('purc
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const purchase = await findPurchase(conn, id);
+    await assertDayOpen(conn, purchase.purchase_date);
     if (purchase.payments.length) {
       throw new HttpError(400, `${purchase.purchase_no} has payments. Cancel the payments first.`);
     }

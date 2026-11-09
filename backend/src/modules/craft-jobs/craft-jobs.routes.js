@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
@@ -162,6 +163,7 @@ async function lockSavedItem(conn, data) {
 router.post('/', requirePermission('craft_jobs.create'), async (req, res) => {
   const data = issueSchema.parse(req.body);
   const id = await withTransaction(async (conn) => {
+    await assertDayOpen(conn, data.issue_date);
     const [[craftsman]] = await conn.query('SELECT is_active FROM craftsmen WHERE id = ?', [data.craftsman_id]);
     if (!craftsman?.is_active) throw new HttpError(400, 'Choose an active craftsman');
 
@@ -247,6 +249,7 @@ router.post('/:id/complete', requirePermission('craft_jobs.complete'), async (re
   const result = await withTransaction(async (conn) => {
     const job = await findJob(conn, id, true);
     if (job.status !== 'issued') throw new HttpError(400, `${job.job_no} is already ${job.status}`);
+    await assertDayOpen(conn, data.completed_date);
     const issued = Number(job.issued_weight_g);
     if (data.returned_weight_g > issued) {
       throw new HttpError(400, `The finished piece cannot weigh more than the gold given (${issued.toFixed(3)} g)`);
@@ -338,6 +341,7 @@ router.post('/:id/cancel', requirePermission('craft_jobs.delete'), async (req, r
     const job = await findJob(conn, id, true);
     if (job.status !== 'issued') throw new HttpError(400, `${job.job_no} is already ${job.status}`);
     const [[{ today }]] = await conn.query('SELECT CURDATE() AS today');
+    await assertDayOpen(conn, today);
     await ledger(conn, req, job, 'gold_returned', -Number(job.issued_weight_g), today, reason ? `Job cancelled: ${reason}` : 'Job cancelled');
     if (job.source_item_id) {
       await conn.query("UPDATE items SET stock_qty = stock_qty + 1, status = 'in_stock' WHERE id = ?", [job.source_item_id]);

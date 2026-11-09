@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { hasPermission, requirePermission } from '../../middleware/auth.js';
@@ -155,6 +156,7 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'The same item is on the bill twice');
 
   const result = await withTransaction(async (conn) => {
+    await assertDayOpen(conn); // bills are always dated now
     let customer = null;
     if (data.customer_id) customer = await findCustomer(conn, data.customer_id);
 
@@ -334,6 +336,13 @@ router.post('/:id/cancel', requirePermission('sales.cancel'), async (req, res) =
   await withTransaction(async (conn) => {
     const sale = await findSale(conn, id);
     if (sale.status === 'cancelled') throw new HttpError(400, 'This bill is already cancelled');
+    await assertDayOpen(conn, sale.sale_date);
+    // Receipts taken with this bill are refunded too, so their days must be open as well.
+    const [payDays] = await conn.query(
+      "SELECT DISTINCT DATE(payment_date) AS d FROM customer_payments WHERE sale_id = ? AND status = 'active'",
+      [id],
+    );
+    for (const p of payDays) await assertDayOpen(conn, p.d);
 
     for (const l of sale.lines) {
       await conn.query("UPDATE items SET stock_qty = stock_qty + ?, status = 'in_stock' WHERE id = ?", [l.qty, l.item_id]);

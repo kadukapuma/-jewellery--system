@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
@@ -108,6 +109,7 @@ router.get('/:id', requirePermission('expenses.view'), async (req, res) => {
 router.post('/', requirePermission('expenses.create'), async (req, res) => {
   const data = createSchema.parse(req.body);
   const id = await withTransaction(async (conn) => {
+    await assertDayOpen(conn, data.expense_date);
     const [[category]] = await conn.query('SELECT id, is_active FROM expense_categories WHERE id = ?', [data.category_id]);
     if (!category) throw new HttpError(400, 'Category not found');
     if (!category.is_active) throw new HttpError(400, 'This category is no longer in use');
@@ -129,6 +131,7 @@ router.post('/:id/cancel', requirePermission('expenses.cancel'), async (req, res
   await withTransaction(async (conn) => {
     const expense = await findExpense(conn, id);
     if (expense.status === 'cancelled') throw new HttpError(400, 'This expense is already cancelled');
+    await assertDayOpen(conn, expense.expense_date);
     await conn.query(
       "UPDATE expenses SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE id = ?",
       [reason ? `Cancelled: ${reason}` : 'Cancelled', id],

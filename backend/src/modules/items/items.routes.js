@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { hasPermission, requirePermission } from '../../middleware/auth.js';
@@ -210,6 +211,7 @@ router.post('/:id/stock', requirePermission('items.adjust_stock'), async (req, r
   const data = stockSchema.parse(req.body);
 
   await withTransaction(async (conn) => {
+    await assertDayOpen(conn);
     const [[item]] = await conn.query('SELECT * FROM items WHERE id = ? FOR UPDATE', [id]);
     if (!item) throw new HttpError(404, 'Item not found');
     if (item.status === 'with_craftsman') throw new HttpError(400, 'This item is with a craftsman. Receive it back first.');

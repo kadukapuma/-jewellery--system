@@ -30,6 +30,7 @@ import customerPaymentsRoutes from './modules/customer-payments/customer-payment
 import reportsRoutes from './modules/reports/reports.routes.js';
 import financeRoutes from './modules/finance/finance.routes.js';
 import expensesRoutes from './modules/expenses/expenses.routes.js';
+import dayEndRoutes from './modules/day-end/day-end.routes.js';
 import dangerZoneRoutes, { myRequestsRouter } from './modules/danger-zone/danger-zone.routes.js';
 
 const app = express();
@@ -67,6 +68,7 @@ app.use('/api/customer-payments', secured, customerPaymentsRoutes);
 app.use('/api/reports', secured, reportsRoutes);
 app.use('/api/finance', secured, financeRoutes);
 app.use('/api/expenses', secured, expensesRoutes);
+app.use('/api/day-end', secured, dayEndRoutes);
 app.use('/api/danger-zone', secured, requireAdmin, dangerZoneRoutes);
 app.use('/api/change-requests', secured, myRequestsRouter);
 

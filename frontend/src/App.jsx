@@ -31,6 +31,7 @@ import FinanceOverviewPage from './pages/finance/FinanceOverviewPage';
 import ExpensesPage from './pages/finance/ExpensesPage';
 import CashBankPage from './pages/finance/CashBankPage';
 import DangerZonePage from './pages/admin/DangerZonePage';
+import DayEndPage from './pages/day-end/DayEndPage';
 import MyRequestsPage from './pages/MyRequestsPage';
 
 export default function App() {
@@ -62,7 +63,8 @@ export default function App() {
           <Route path="reports" element={<RequirePermission perm={['reports.sales', 'reports.profit', 'reports.stock', 'reports.wastage', 'reports.customer_balances', 'reports.supplier_balances', 'reports.craftsman_balances']}><ReportsPage /></RequirePermission>} />
           <Route path="finance" element={<RequirePermission perm="finance.view"><FinanceOverviewPage /></RequirePermission>} />
           <Route path="expenses" element={<RequirePermission perm="expenses.view"><ExpensesPage /></RequirePermission>} />
-          <Route path="cash-bank" element={<RequirePermission perm="finance.view"><CashBankPage /></RequirePermission>} />
+          <Route path="day-end" element={<RequirePermission perm="day_end.view"><DayEndPage /></RequirePermission>} />
+          <Route path="cash-bank"element={<RequirePermission perm="finance.view"><CashBankPage /></RequirePermission>} />
           <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="users" element={<RequirePermission perm="users.view"><UsersPage /></RequirePermission>} />
           <Route path="roles" element={<RequirePermission perm="roles.view"><RolesPage /></RequirePermission>} />

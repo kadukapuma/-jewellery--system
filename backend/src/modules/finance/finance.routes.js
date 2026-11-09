@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
@@ -152,6 +153,7 @@ router.post('/cash-entries', requirePermission('cash_entries.create'), async (re
   const data = entrySchema.parse(req.body);
   if (TRANSFER_KINDS.includes(data.entry_type)) data.account = data.entry_type === 'deposit' ? 'cash' : 'bank';
   const id = await withTransaction(async (conn) => {
+    await assertDayOpen(conn, data.entry_date);
     const from = accountTakenFrom(data);
     if (from) {
       // Lock the entries table so two withdrawals at once cannot both pass the balance check.
@@ -179,6 +181,7 @@ router.post('/cash-entries/:id/cancel', requirePermission('cash_entries.cancel')
   await withTransaction(async (conn) => {
     const entry = await findEntry(conn, id);
     if (entry.status === 'cancelled') throw new HttpError(400, 'This entry is already cancelled');
+    await assertDayOpen(conn, entry.entry_date);
     await conn.query(
       "UPDATE cash_entries SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE id = ?",
       [reason ? `Cancelled: ${reason}` : 'Cancelled', id],

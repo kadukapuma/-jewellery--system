@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
@@ -112,6 +113,7 @@ router.post('/:id/gold-adjustments', requirePermission('craftsman_account.adjust
   const signed = data.txn_type === 'extra_issue' ? Math.abs(data.weight_g)
     : data.txn_type === 'gold_returned' ? -Math.abs(data.weight_g) : data.weight_g;
   await withTransaction(async (conn) => {
+    await assertDayOpen(conn, data.txn_date);
     await findCraftsman(conn, id);
     const [result] = await conn.query(
       `INSERT INTO craftsman_gold_ledger (craftsman_id, karat_id, txn_date, txn_type, weight_g, notes, created_by)

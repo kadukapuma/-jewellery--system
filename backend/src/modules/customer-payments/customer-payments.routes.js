@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { assertDayOpen } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
@@ -83,6 +84,7 @@ router.get('/:id', requirePermission('customer_payments.view'), async (req, res)
 router.post('/', requirePermission('customer_payments.create'), async (req, res) => {
   const data = createSchema.parse(req.body);
   const id = await withTransaction(async (conn) => {
+    await assertDayOpen(conn, data.payment_date);
     const [[customer]] = await conn.query('SELECT id FROM customers WHERE id = ?', [data.customer_id]);
     if (!customer) throw new HttpError(400, 'Customer not found');
     if (data.sale_id) {
@@ -108,6 +110,7 @@ router.post('/:id/cancel', requirePermission('customer_payments.cancel'), async 
   await withTransaction(async (conn) => {
     const payment = await findPayment(conn, id);
     if (payment.status === 'cancelled') throw new HttpError(400, 'This receipt is already cancelled');
+    await assertDayOpen(conn, payment.payment_date);
     await conn.query(
       "UPDATE customer_payments SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE id = ?",
       [reason ? `Cancelled: ${reason}` : 'Cancelled', id],

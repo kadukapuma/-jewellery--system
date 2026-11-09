@@ -36,6 +36,7 @@ import ReceiptIcon from '@mui/icons-material/RequestQuoteOutlined';
 import ReportIcon from '@mui/icons-material/AssessmentOutlined';
 import FinanceIcon from '@mui/icons-material/AccountBalanceOutlined';
 import MasterIcon from '@mui/icons-material/FolderSharedOutlined';
+import DayEndIcon from '@mui/icons-material/EventAvailableOutlined';
 
 import { useAuth } from '../auth/AuthContext';
 import { gold, stone } from '../theme';
@@ -80,6 +81,12 @@ const NAV_CATEGORIES = [
           { label: 'Bills', path: '/sales', perm: 'sales.view' },
           { label: 'Receipts', path: '/customer-payments', perm: 'customer_payments.view' },
         ],
+      },
+      {
+        label: 'Day End',
+        path: '/day-end',
+        icon: DayEndIcon,
+        perm: 'day_end.view',
       },
     ],
   },
