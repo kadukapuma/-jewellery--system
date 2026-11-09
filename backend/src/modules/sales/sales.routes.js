@@ -53,6 +53,8 @@ const createSchema = z.object({
   notes: optionalText(255),
   // Total the counter showed. If the gold price changed since, the bill is not saved.
   expected_total: z.coerce.number().optional().nullable(),
+  // Use the customer's advance (unallocated payments) on this bill.
+  use_advance: z.boolean().default(true),
 });
 
 const listSchema = z.object({
@@ -217,24 +219,31 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       throw new HttpError(409, `The gold price changed while you were billing. New total is ${total.toFixed(2)} — please check and save again.`, 'PRICE_CHANGED');
     }
 
-    // 3. Payments: anything over the total is change, given back from the cash.
+    // 3. Advance first (if chosen): money the customer already left with the shop comes off the bill.
+    const advanceUsed = customer && data.use_advance
+      ? round2(Math.max(0, Math.min(Number(customer.advance_available) || 0, total)))
+      : 0;
+    const due = round2(total - advanceUsed); // what the customer pays now
+
+    // Payments: anything over what is due is change, given back from the cash.
     const payments = data.payments.map((p) => ({ ...p }));
     const received = round2(payments.reduce((s, p) => s + p.amount, 0));
     let change = 0;
-    if (received > total) {
-      change = round2(received - total);
+    if (received > due) {
+      change = round2(received - due);
       const cash = payments.find((p) => p.method === 'cash');
-      if (!cash || cash.amount < change) throw new HttpError(400, 'Card, bank or cheque payments cannot be more than the bill');
+      if (!cash || cash.amount < change) throw new HttpError(400, 'Card, bank or cheque payments cannot be more than the amount to pay');
       cash.amount = round2(cash.amount - change);
     }
-    const paid = round2(Math.min(received, total));
-    const balance = round2(total - paid);
+    const paid = round2(Math.min(received, due));
+    const balance = round2(total - paid); // left after the counter payments
+    const creditNeeded = round2(due - paid);
 
-    // 4. Credit rules.
-    if (balance > 0) {
+    // 4. Credit rules (only for what the advance doesn't cover).
+    if (creditNeeded > 0) {
       if (!customer) throw new HttpError(400, 'Choose a customer to give credit (the bill is not fully paid)');
       if (!hasPermission(req, 'sales.credit')) throw new HttpError(403, 'You do not have permission to give credit. Take the full amount.');
-      const newBalance = round2(customer.balance + balance);
+      const newBalance = round2(customer.balance + balance); // customer.balance already nets the advance
       if (Number(customer.credit_limit) <= 0) {
         throw new HttpError(400, `${customer.name} has no credit limit. Set one on the customer to allow credit.`);
       }
@@ -249,7 +258,7 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
     const [saleResult] = await conn.query(
       `INSERT INTO sales (invoice_no, customer_id, sale_date, subtotal, discount, total, paid_amount, balance, payment_status, due_date, notes, status, created_by)
        VALUES (?, ?, NOW(), ?, ?, ?, 0, ?, 'unpaid', ?, ?, 'completed', ?)`,
-      [invoiceNo, customer?.id ?? null, subtotal, discount, total, total, balance > 0 ? data.due_date ?? null : null, data.notes, req.user.id],
+      [invoiceNo, customer?.id ?? null, subtotal, discount, total, total, creditNeeded > 0 ? data.due_date ?? null : null, data.notes, req.user.id],
     );
     const saleId = saleResult.insertId;
 
@@ -284,13 +293,13 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       await conn.query('INSERT INTO customer_payment_allocations (payment_id, sale_id, amount) VALUES (?, ?, ?)', [pay.insertId, saleId, p.amount]);
     }
 
-    if (balance > 0 && data.instalments) {
+    if (creditNeeded > 0 && data.instalments) {
       const [plan] = await conn.query(
         `INSERT INTO instalment_plans (sale_id, customer_id, financed_amount, number_of_instalments, frequency, start_date, created_by)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [saleId, customer.id, balance, data.instalments.count, data.instalments.frequency, data.instalments.start_date, req.user.id],
+        [saleId, customer.id, creditNeeded, data.instalments.count, data.instalments.frequency, data.instalments.start_date, req.user.id],
       );
-      const schedule = buildSchedule(balance, data.instalments.count, data.instalments.frequency, data.instalments.start_date);
+      const schedule = buildSchedule(creditNeeded, data.instalments.count, data.instalments.frequency, data.instalments.start_date);
       await conn.query('INSERT INTO instalment_schedule (plan_id, instalment_no, due_date, amount_due) VALUES ?', [
         schedule.map((r) => [plan.insertId, r.instalment_no, r.due_date, r.amount_due]),
       ]);
@@ -299,15 +308,15 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
     }
 
     await recomputeSale(conn, saleId);
-    // Money the customer left with the shop earlier now pays this bill.
-    await applyCustomerAdvances(conn, customer?.id);
+    // Money the customer left with the shop earlier now pays this bill (unless the cashier chose not to).
+    if (advanceUsed > 0) await applyCustomerAdvances(conn, customer.id);
 
     await writeAudit(conn, req, {
       action: 'create',
       table: 'sales',
       recordId: saleId,
       newValues: {
-        invoice_no: invoiceNo, customer_id: customer?.id ?? null, total, discount, bill_discount: data.discount, paid, change,
+        invoice_no: invoiceNo, customer_id: customer?.id ?? null, total, discount, bill_discount: data.discount, paid, change, advance_used: advanceUsed,
         lines: lines.map((l) => ({ item: l.item.item_code, min: l.price_min, max: l.price_max, sold: l.line_total })),
       },
     });

@@ -68,6 +68,7 @@ export default function PosPage() {
   const [cart, setCart] = useState([]); // { item, qty, unitPrice }
   const [customer, setCustomer] = useState(null);
   const [discount, setDiscount] = useState('');
+  const [useAdvance, setUseAdvance] = useState(true);
   const [payments, setPayments] = useState([newPayment()]);
   const [credit, setCredit] = useState({ due_date: '', useInstalments: false, count: 3, frequency: 'monthly', start_date: todayYmd() });
   const [error, setError] = useState('');
@@ -100,8 +101,13 @@ export default function PosPage() {
   const discountTotal = round2(subtotal - total);
   const hasPriceError = lines.some((l) => l.problem?.level === 'error');
   const received = round2(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0));
-  const change = received > total ? round2(received - total) : 0;
-  const balance = received < total ? round2(total - received) : 0;
+  // The customer's advance (money already with the shop) comes off the bill first, if ticked.
+  const advance = customer ? Math.max(0, Number(customer.advance_available) || 0) : 0;
+  const advanceUsed = useAdvance ? round2(Math.min(advance, total)) : 0;
+  const advanceLeft = round2(advance - advanceUsed);
+  const toPay = round2(total - advanceUsed); // final amount the customer pays now
+  const change = received > toPay ? round2(received - toPay) : 0;
+  const balance = received < toPay ? round2(toPay - received) : 0;
   const rates = [...new Map(lines.map((l) => [l.item.karat_name, l.item.current_gram_price])).entries()];
 
   const addItem = async () => {
@@ -150,7 +156,13 @@ export default function PosPage() {
     return { ...c, discountText, unitPrice: String(round2(max - (Number(discountText) || 0))) };
   }));
   const setQty = (id, qty) => setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, qty: Math.max(1, Math.min(c.item.stock_qty, qty || 1)) } : c)));
-  const setPayment = (i, patch) => setPayments((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  // Typing an amount turns off "Full cash" auto-fill for that row.
+  const setPayment = (i, patch) => setPayments((prev) => prev.map((p, j) => (j === i ? { ...p, ...patch, ...('amount' in patch ? { auto: false } : {}) } : p)));
+
+  // A "Full cash" amount follows the amount to pay (advance ticked/unticked, customer, items or discount changed).
+  useEffect(() => {
+    setPayments((prev) => (prev.length === 1 && prev[0].auto && prev[0].amount !== toPay ? [{ ...prev[0], amount: toPay || '' }] : prev));
+  }, [toPay]);
 
   // Re-read prices if the gold price changed while billing; prices go back to the new max.
   const refreshPrices = async () => {
@@ -174,8 +186,9 @@ export default function PosPage() {
         due_date: balance > 0 && !credit.useInstalments ? credit.due_date || null : null,
         instalments: balance > 0 && credit.useInstalments ? { count: Number(credit.count), frequency: credit.frequency, start_date: credit.start_date } : null,
         expected_total: total,
+        use_advance: advanceUsed > 0,
       });
-      notify(`Bill ${res.data.invoice_no} saved${res.data.change ? ` · give change ${formatMoney(res.data.change)}` : ''}`);
+      notify(`Bill ${res.data.invoice_no} saved${advanceUsed > 0 ? ` · advance used ${formatMoney(advanceUsed)}` : ''}${res.data.change ? ` · give change ${formatMoney(res.data.change)}` : ''}`);
       navigate(`/sales/${res.data.id}`, { state: { justCreated: true, change: res.data.change } });
     } catch (err) {
       setError(errorMessage(err));
@@ -314,12 +327,19 @@ export default function PosPage() {
       <Grid size={{ xs: 12, lg: 4 }}>
         <Box sx={{ position: { lg: 'sticky' }, top: 16 }}>
           <Card sx={{ p: 2.5, mb: 2 }}>
-            <CustomerPicker value={customer} onChange={setCustomer} />
+            <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setUseAdvance(true); }} />
             {customer && (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                {customer.balance > 0 ? `Owes ${formatMoney(customer.balance)}` : customer.balance < 0 ? `Advance ${formatMoney(-customer.balance)} – used on this bill` : 'No balance'}
+                {advance > 0 ? `Advance ${formatMoney(advance)} available` : customer.balance > 0 ? `Owes ${formatMoney(customer.balance)}` : 'No balance'}
                 {Number(customer.credit_limit) > 0 ? ` · credit limit ${formatMoney(customer.credit_limit)}` : ' · no credit'}
               </Typography>
+            )}
+            {advance > 0 && (
+              <FormControlLabel
+                sx={{ mt: 0.5 }}
+                label={`Use advance (${formatMoney(advance)}) on this bill`}
+                control={<Checkbox size="small" checked={useAdvance} onChange={(e) => setUseAdvance(e.target.checked)} />}
+              />
             )}
           </Card>
 
@@ -343,14 +363,32 @@ export default function PosPage() {
               </Box>
             )}
             <Divider sx={{ borderColor: 'rgba(255,255,255,.25)', my: 1.5 }} />
-            <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Total</Typography>
-            <Typography sx={{ fontSize: 40, fontWeight: 600, letterSpacing: -1.5, lineHeight: 1.1 }}>{formatMoney(total)}</Typography>
+            {advanceUsed > 0 ? (
+              <>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Total</Typography>
+                  <Typography sx={{ fontWeight: 600 }}>{formatMoney(total)}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Advance</Typography>
+                  <Typography sx={{ fontWeight: 600 }}>− {formatMoney(advanceUsed)}</Typography>
+                </Box>
+                {advanceLeft > 0 && (
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.7)' }}>Advance left after this bill: {formatMoney(advanceLeft)}</Typography>
+                )}
+                <Divider sx={{ borderColor: 'rgba(255,255,255,.25)', my: 1.5 }} />
+                <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>To pay</Typography>
+              </>
+            ) : (
+              <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Total</Typography>
+            )}
+            <Typography sx={{ fontSize: 40, fontWeight: 600, letterSpacing: -1.5, lineHeight: 1.1 }}>{formatMoney(toPay)}</Typography>
           </Box>
 
           <Card sx={{ p: 2.5, mb: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
               <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>Payment</Typography>
-              <Button size="small" onClick={() => setPayments([{ ...newPayment(), amount: total }])} disabled={!total}>Full cash</Button>
+              <Button size="small" onClick={() => setPayments([{ ...newPayment(), amount: toPay, auto: true }])} disabled={!toPay}>Full cash</Button>
             </Box>
             {payments.map((p, i) => (
               <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 1, mb: 1 }}>
@@ -367,9 +405,13 @@ export default function PosPage() {
               </Box>
             ))}
             {payments.length < 4 && (
-              <Button size="small" startIcon={<AddIcon />} onClick={() => setPayments((p) => [...p, newPayment('card')])}>Split payment</Button>
+              <Button size="small" startIcon={<AddIcon />} onClick={() => setPayments((p) => [...p.map((x) => ({ ...x, auto: false })), newPayment('card')])}>Split payment</Button>
             )}
             <Divider sx={{ my: 1.5 }} />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+              <Typography color="text.secondary">To pay</Typography>
+              <Typography sx={{ fontWeight: 600 }}>{formatMoney(toPay)}</Typography>
+            </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
               <Typography color="text.secondary">Received</Typography>
               <Typography sx={{ fontWeight: 600 }}>{formatMoney(received)}</Typography>
@@ -418,7 +460,7 @@ export default function PosPage() {
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           <Button fullWidth size="large" variant="contained" onClick={save} disabled={busy || !cart.length || hasPriceError}>
-            Complete sale {total ? formatMoney(total) : ''}
+            Complete sale {toPay ? formatMoney(toPay) : ''}
           </Button>
         </Box>
       </Grid>

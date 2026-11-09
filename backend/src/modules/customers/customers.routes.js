@@ -33,11 +33,14 @@ const CUSTOMER_SELECT = `
          (SELECT MAX(s.sale_date) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS last_sale_date,
          (SELECT COALESCE(SUM(s.balance), 0) FROM sales s
           WHERE s.customer_id = c.id AND s.status = 'completed' AND s.balance > 0 AND s.due_date < CURDATE()) AS overdue,
-         (SELECT COUNT(*) FROM customer_payments p WHERE p.customer_id = c.id) AS payment_count
+         (SELECT COUNT(*) FROM customer_payments p WHERE p.customer_id = c.id) AS payment_count,
+         -- Advance the next bill can use: money received but not yet put on any bill.
+         (SELECT COALESCE(SUM(p.amount - COALESCE((SELECT SUM(a.amount) FROM customer_payment_allocations a WHERE a.payment_id = p.id), 0)), 0)
+          FROM customer_payments p WHERE p.customer_id = c.id AND p.status = 'active') AS advance_available
   FROM customers c JOIN v_customer_balances b ON b.customer_id = c.id`;
 
 function toCustomer(row) {
-  return { ...row, balance: Number(row.balance), overdue: Number(row.overdue) };
+  return { ...row, balance: Number(row.balance), overdue: Number(row.overdue), advance_available: Number(row.advance_available) };
 }
 
 export async function findCustomer(db, id) {
