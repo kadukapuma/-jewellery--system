@@ -10,12 +10,14 @@ import PrintIcon from '@mui/icons-material/PrintOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
 import CancelIcon from '@mui/icons-material/CancelOutlined';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
+import EditNoteIcon from '@mui/icons-material/EditNoteOutlined';
 import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import { formatDate, formatDateTime, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
 import { PAYMENT_METHODS, PAYMENT_STATUS } from '../../utils/payments';
+import RecordActions from '../../components/RecordActions';
 import ReceivePaymentDialog from './ReceivePaymentDialog';
 
 // Only the bill is printed: everything else on the page is hidden while printing.
@@ -29,9 +31,10 @@ const PRINT_CSS = `
   }
 `;
 
-function CancelSaleDialog({ sale, onClose, onDone }) {
+// correcting: "Correct bill" - cancel, then open the same items at the counter to make the right bill.
+function CancelSaleDialog({ sale, correcting, onClose, onDone }) {
   const notify = useNotify();
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(correcting ? 'Corrected - wrong items or price' : '');
   const [busy, setBusy] = useState(false);
   const cancel = async () => {
     setBusy(true);
@@ -47,9 +50,10 @@ function CancelSaleDialog({ sale, onClose, onDone }) {
   const atCounter = sale.payments.filter((p) => p.at_counter).reduce((s, p) => s + Number(p.amount), 0);
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {sale.invoice_no}</DialogTitle>
+      <DialogTitle>{correcting ? 'Correct' : 'Cancel'} {sale.invoice_no}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {correcting && 'Bills cannot be changed once saved, so this bill is cancelled and its items open at the counter for the right bill. '}
           The items go back into stock.
           {atCounter > 0 && ` Refund ${formatMoney(atCounter)} paid with this bill.`}
           {sale.payments.some((p) => !p.at_counter) && ' Later payments on this bill become the customer’s advance.'}
@@ -58,7 +62,7 @@ function CancelSaleDialog({ sale, onClose, onDone }) {
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Keep bill</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy || !reason.trim()}>Cancel bill</Button>
+        <Button variant="contained" color="error" onClick={cancel} disabled={busy || !reason.trim()}>{correcting ? 'Cancel and open at counter' : 'Cancel bill'}</Button>
       </DialogActions>
     </Dialog>
   );
@@ -74,6 +78,7 @@ export default function InvoicePage() {
   const [error, setError] = useState('');
   const [paying, setPaying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const justCreated = location.state?.justCreated;
 
   const load = useCallback(async () => {
@@ -105,6 +110,12 @@ export default function InvoicePage() {
         {can('sales.create') && <Button startIcon={<AddShoppingCartIcon />} onClick={() => navigate('/pos')}>New sale</Button>}
         {!cancelled && sale.balance > 0 && sale.customer_id && can('customer_payments.create') && (
           <Button variant="outlined" startIcon={<PaymentsIcon />} onClick={() => setPaying(true)}>Receive {formatMoney(sale.balance)}</Button>
+        )}
+        <RecordActions record={sale} label={sale.invoice_no} url={`/sales/${sale.id}`} module="sales"
+          fields={[{ name: 'due_date', label: 'Credit due date', type: 'date' }, { name: 'notes', label: 'Notes' }]}
+          onDone={load} onDeleted={() => navigate('/sales', { replace: true })} />
+        {!cancelled && can('sales.cancel') && can('sales.create') && (
+          <Button startIcon={<EditNoteIcon />} onClick={() => setCorrecting(true)}>Correct bill</Button>
         )}
         {!cancelled && can('sales.cancel') && <Button color="error" startIcon={<CancelIcon />} onClick={() => setCancelling(true)}>Cancel bill</Button>}
         <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>Print</Button>
@@ -248,6 +259,7 @@ export default function InvoicePage() {
           <Typography variant="caption">{shop.invoice_footer}</Typography>
           <Typography variant="caption">Served by {sale.created_by_name}</Typography>
         </Box>
+        {sale.notes && <Typography variant="caption" className="no-print" sx={{ display: 'block', mt: 1 }}>Notes: {sale.notes}</Typography>}
         <Box className="no-print" sx={{ mt: 1 }}>
           <Chip size="small" variant="outlined" label={cancelled ? 'Cancelled' : status.label} color={cancelled ? 'default' : status.color} />
         </Box>
@@ -255,6 +267,18 @@ export default function InvoicePage() {
 
       {paying && <ReceivePaymentDialog sale={sale} onClose={() => setPaying(false)} onSaved={() => { setPaying(false); load(); }} />}
       {cancelling && <CancelSaleDialog sale={sale} onClose={() => setCancelling(false)} onDone={() => { setCancelling(false); load(); }} />}
+      {correcting && (
+        <CancelSaleDialog sale={sale} correcting onClose={() => setCorrecting(false)}
+          onDone={() => navigate('/pos', {
+            state: {
+              correcting: {
+                invoice_no: sale.invoice_no,
+                customer_id: sale.customer_id,
+                lines: sale.lines.map((l) => ({ item_id: l.item_id, qty: l.qty, unit_price: Math.round((Number(l.line_total) / l.qty) * 100) / 100 })),
+              },
+            },
+          })} />
+      )}
     </>
   );
 }

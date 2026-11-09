@@ -5,6 +5,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocatePayment, recomputePurchase } from './supplier-payments.service.js';
 
@@ -117,6 +118,13 @@ router.post('/:id/cancel', requirePermission('supplier_payments.cancel'), async 
     });
   });
   res.json(await findPayment(pool, id));
+});
+
+cancelledRecordRoutes(router, {
+  table: 'supplier_payments',
+  module: 'supplier_payments',
+  fields: z.object({ reference_no: optionalText(50), cheque_date: dateSchema.optional().nullable().or(z.literal('').transform(() => null)), notes: optionalText(255) }),
+  find: findPayment,
 });
 
 export default router;

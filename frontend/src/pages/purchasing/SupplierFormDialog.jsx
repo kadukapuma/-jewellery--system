@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { emailProblem } from '../../utils/validation';
 
@@ -42,6 +42,7 @@ export default function SupplierFormDialog({ supplier, onClose, onSaved }) {
     const body = { ...form, opening_balance: Number(form.opening_balance) || 0, credit_days: Number(form.credit_days) || 0 };
     try {
       const res = isNew ? await api.post('/suppliers', body) : await api.put(`/suppliers/${supplier.id}`, body);
+      if (isPendingApproval(res)) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? `${form.name} added` : 'Supplier saved');
       onSaved(res.data);
     } catch (err) {

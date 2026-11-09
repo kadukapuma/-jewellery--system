@@ -6,7 +6,7 @@ import {
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
 import TextField from '../../components/TextField';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';
@@ -89,6 +89,7 @@ export default function ItemFormDialog({ item, categories, karats, onClose, onSa
     if (isNew) delete body.status;
     try {
       const res = isNew ? await api.post('/items', body) : await api.put(`/items/${item.id}`, body);
+      if (isPendingApproval(res)) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? `Item ${res.data.barcode} added` : 'Item saved');
       onSaved(res.data, isNew && printAfter && can('tags.print'));
     } catch (err) {

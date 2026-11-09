@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
-import { requirePermission } from '../../middleware/auth.js';
+import { requireAdmin, requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { idSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { moveToBin, snapshot } from '../../utils/recycleBin.js';
 
 const router = Router();
 
@@ -73,7 +74,7 @@ router.post('/', requirePermission('roles.create'), async (req, res) => {
   res.status(201).json(await findRole(pool, id));
 });
 
-router.put('/:id', requirePermission('roles.edit'), async (req, res) => {
+router.put('/:id', requireAdmin, requirePermission('roles.edit'), async (req, res) => {
   const id = parseId(req.params.id);
   const data = roleSchema.parse(req.body);
   guardOwnRole(req, id);
@@ -97,13 +98,22 @@ router.put('/:id', requirePermission('roles.edit'), async (req, res) => {
   res.json(await findRole(pool, id));
 });
 
-router.delete('/:id', requirePermission('roles.delete'), async (req, res) => {
+router.delete('/:id', requireAdmin, requirePermission('roles.delete'), async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const role = await findRole(conn, id);
     if (role.is_system) throw new HttpError(400, 'Built-in roles cannot be deleted');
     const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM users WHERE role_id = ?', [id]);
     if (n > 0) throw new HttpError(400, `${n} user(s) still have this role. Move them to another role first.`);
+    await moveToBin(conn, req, {
+      table: 'roles',
+      recordId: id,
+      label: role.name,
+      parts: [
+        { table: 'roles', rows: await snapshot(conn, 'roles', 'id = ?', [id]) },
+        { table: 'role_permissions', rows: await snapshot(conn, 'role_permissions', 'role_id = ?', [id]) },
+      ],
+    });
     await conn.query('DELETE FROM roles WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'roles', recordId: id, oldValues: role });
   });

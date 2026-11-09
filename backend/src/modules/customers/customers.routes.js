@@ -5,6 +5,8 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { binRecord } from '../../utils/recycleBin.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 
 const router = Router();
 
@@ -103,7 +105,7 @@ router.post('/', requirePermission('customers.create'), async (req, res) => {
   res.status(201).json(await findCustomer(pool, id));
 });
 
-router.put('/:id', requirePermission('customers.edit'), async (req, res) => {
+router.put('/:id', requirePermission('customers.edit'), adminApproval('customers.update', { table: 'customers', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = customerSchema.parse(req.body);
   await withTransaction(async (conn) => {
@@ -116,9 +118,9 @@ router.put('/:id', requirePermission('customers.edit'), async (req, res) => {
     await writeAudit(conn, req, { action: 'update', table: 'customers', recordId: id, oldValues: before, newValues: data });
   });
   res.json(await findCustomer(pool, id));
-});
+}));
 
-router.delete('/:id', requirePermission('customers.delete'), async (req, res) => {
+router.delete('/:id', requirePermission('customers.delete'), adminApproval('customers.delete', { table: 'customers', action: 'delete' }, async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const c = await findCustomer(conn, id);
@@ -127,10 +129,11 @@ router.delete('/:id', requirePermission('customers.delete'), async (req, res) =>
       [id, id],
     );
     if (n > 0 || c.payment_count) throw new HttpError(400, `${c.name} has bills or payments and cannot be deleted.`);
+    await binRecord(conn, req, 'customers', id);
     await conn.query('DELETE FROM customers WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'customers', recordId: id, oldValues: c });
   });
   res.status(204).end();
-});
+}));
 
 export default router;

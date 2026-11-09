@@ -5,6 +5,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { MONEY_FLOW_SQL, OWNER_KINDS, TRANSFER_KINDS, accountBalances } from './finance.service.js';
 
@@ -185,6 +186,14 @@ router.post('/cash-entries/:id/cancel', requirePermission('cash_entries.cancel')
     await writeAudit(conn, req, { action: 'cancel', table: 'cash_entries', recordId: id, oldValues: { entry_no: entry.entry_no, amount: entry.amount }, newValues: { reason } });
   });
   res.json(await findEntry(pool, id));
+});
+
+cancelledRecordRoutes(router, {
+  path: '/cash-entries/:id',
+  table: 'cash_entries',
+  module: 'cash_entries',
+  fields: z.object({ notes: optionalText(255) }),
+  find: findEntry,
 });
 
 export default router;

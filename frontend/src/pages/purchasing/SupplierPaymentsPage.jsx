@@ -12,6 +12,7 @@ import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
+import RecordActions from '../../components/RecordActions';
 import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS } from '../../utils/payments';
 import SupplierPaymentDialog from './SupplierPaymentDialog';
@@ -144,6 +145,8 @@ export default function SupplierPaymentsPage() {
                     {can('supplier_payments.cancel') && p.status === 'active' && (
                       <Tooltip title="Cancel payment"><IconButton size="small" onClick={() => setCancelling(p)}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                     )}
+                    <RecordActions record={p} label={p.payment_no} url={`/supplier-payments/${p.id}`} module="supplier_payments"
+                      fields={[{ name: 'reference_no', label: 'Reference no.' }, { name: 'cheque_date', label: 'Cheque date', type: 'date' }, { name: 'notes', label: 'Notes' }]} onDone={() => { setExpanded(null); load(); }} />
                   </TableCell>
                 </TableRow>,
                 expanded?.id === p.id && (

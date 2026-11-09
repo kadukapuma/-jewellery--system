@@ -52,7 +52,8 @@ export default function RolesPage() {
   };
 
   // A non-Admin cannot edit the role they belong to (server enforces this too).
-  const canEdit = (r) => can('roles.edit') && (me.is_super_admin || r.id !== me.role_id);
+  // Changing roles is Admin only (Danger Zone rule).
+  const canEdit = () => me.is_super_admin;
 
   const { pageRows, pager } = usePagedRows(roles);
 
@@ -97,7 +98,7 @@ export default function RolesPage() {
                     {canEdit(r) && (
                       <Tooltip title="Edit"><IconButton size="small" onClick={() => setEditing(r)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                     )}
-                    {can('roles.delete') && !r.is_system && (
+                    {me.is_super_admin && !r.is_system && (
                       <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(r)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
                     )}
                   </TableCell>

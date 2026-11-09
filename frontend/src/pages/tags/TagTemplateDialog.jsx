@@ -6,7 +6,7 @@ import {
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
 import TextField from '../../components/TextField';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { stone } from '../../theme';
 import TagLabel, { FIELD_LABELS, SAMPLE_ITEM } from './TagLabel';
@@ -55,7 +55,7 @@ export default function TagTemplateDialog({ template, allFields, shopName, onClo
     const body = { ...form, width_mm: w, height_mm: h };
     try {
       if (isNew) await api.post('/tags/templates', body);
-      else await api.put(`/tags/templates/${template.id}`, body);
+      else if (isPendingApproval(await api.put(`/tags/templates/${template.id}`, body))) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? 'Template added' : 'Template saved');
       onSaved();
     } catch (err) {

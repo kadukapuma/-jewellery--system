@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { RequireAuth, RequirePermission } from './auth/guards';
+import { RequireAdmin, RequireAuth, RequirePermission } from './auth/guards';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
@@ -30,6 +30,8 @@ import ReportsPage from './pages/reports/ReportsPage';
 import FinanceOverviewPage from './pages/finance/FinanceOverviewPage';
 import ExpensesPage from './pages/finance/ExpensesPage';
 import CashBankPage from './pages/finance/CashBankPage';
+import DangerZonePage from './pages/admin/DangerZonePage';
+import MyRequestsPage from './pages/MyRequestsPage';
 
 export default function App() {
   return (
@@ -61,10 +63,12 @@ export default function App() {
           <Route path="finance" element={<RequirePermission perm="finance.view"><FinanceOverviewPage /></RequirePermission>} />
           <Route path="expenses" element={<RequirePermission perm="expenses.view"><ExpensesPage /></RequirePermission>} />
           <Route path="cash-bank" element={<RequirePermission perm="finance.view"><CashBankPage /></RequirePermission>} />
-          <Route path="settings"element={<RequirePermission perm="settings.edit"><SettingsPage /></RequirePermission>} />
+          <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="users" element={<RequirePermission perm="users.view"><UsersPage /></RequirePermission>} />
           <Route path="roles" element={<RequirePermission perm="roles.view"><RolesPage /></RequirePermission>} />
           <Route path="activity" element={<RequirePermission perm="audit_logs.view"><ActivityPage /></RequirePermission>} />
+          <Route path="danger-zone" element={<RequireAdmin><DangerZonePage /></RequireAdmin>} />
+          <Route path="my-requests" element={<MyRequestsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -10,7 +10,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import LabelIcon from '@mui/icons-material/LocalOfferOutlined';
 import StockIcon from '@mui/icons-material/Inventory2Outlined';
-import api, { errorMessage } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
@@ -31,7 +31,7 @@ const STATUS = {
 };
 
 export default function ItemsPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const notify = useNotify();
   const [categories, setCategories] = useState([]);
   const [karats, setKarats] = useState([]);
@@ -95,11 +95,12 @@ export default function ItemsPage() {
     setSelected(next);
   };
 
-  const remove = async () => {
+  const remove = async (reason) => {
     setBusy(true);
     try {
-      await api.delete(`/items/${deleting.id}`);
-      notify(`${deleting.item_code} deleted`);
+      const res = await api.delete(`/items/${deleting.id}`, withReason(reason));
+      if (isPendingApproval(res)) notify(APPROVAL_MESSAGE, 'info');
+      else notify(`${deleting.item_code} deleted`);
       load();
     } catch (err) {
       notify(errorMessage(err), 'error');
@@ -285,9 +286,10 @@ export default function ItemsPage() {
         open={!!deleting}
         title="Delete item"
         message={`Delete ${deleting?.item_code} (${deleting?.name})? Only items with no purchase, sale or craft history can be deleted.`}
-        confirmText="Delete"
+        confirmText={user.needs_approval ? 'Request delete' : 'Delete'}
         color="error"
         busy={busy}
+        reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
         onConfirm={remove}
         onClose={() => setDeleting(null)}
       />

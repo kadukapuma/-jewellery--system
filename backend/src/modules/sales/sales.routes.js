@@ -5,6 +5,8 @@ import { hasPermission, requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, idSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
+import { snapshot } from '../../utils/recycleBin.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { calcItemPrice, calcPriceRange } from '../../services/pricing.js';
 import { getCurrentPrice } from '../gold-prices/gold-prices.service.js';
@@ -245,9 +247,9 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
     // 5. Save the bill.
     const invoiceNo = await nextDocumentNumber(conn, 'INV');
     const [saleResult] = await conn.query(
-      `INSERT INTO sales (invoice_no, customer_id, sale_date, subtotal, discount, total, paid_amount, balance, payment_status, due_date, status, created_by)
-       VALUES (?, ?, NOW(), ?, ?, ?, 0, ?, 'unpaid', ?, 'completed', ?)`,
-      [invoiceNo, customer?.id ?? null, subtotal, discount, total, total, balance > 0 ? data.due_date ?? null : null, req.user.id],
+      `INSERT INTO sales (invoice_no, customer_id, sale_date, subtotal, discount, total, paid_amount, balance, payment_status, due_date, notes, status, created_by)
+       VALUES (?, ?, NOW(), ?, ?, ?, 0, ?, 'unpaid', ?, ?, 'completed', ?)`,
+      [invoiceNo, customer?.id ?? null, subtotal, discount, total, total, balance > 0 ? data.due_date ?? null : null, data.notes, req.user.id],
     );
     const saleId = saleResult.insertId;
 
@@ -344,6 +346,30 @@ router.post('/:id/cancel', requirePermission('sales.cancel'), async (req, res) =
     await writeAudit(conn, req, { action: 'cancel', table: 'sales', recordId: id, oldValues: { invoice_no: sale.invoice_no, total: sale.total }, newValues: { reason } });
   });
   res.json(presentSale(await findSale(pool, id), req));
+});
+
+// Bills: only the due date and notes can change (items and money: cancel and make a new bill).
+// A cancelled bill can be deleted; its lines, refunded receipts and instalment plan go with it.
+cancelledRecordRoutes(router, {
+  table: 'sales',
+  module: 'sales',
+  fields: z.object({ due_date: dateSchema.nullable().or(z.literal('').transform(() => null)), notes: optionalText(255) }),
+  children: async (conn, sale) => {
+    const payments = await snapshot(conn, 'customer_payments', 'sale_id = ?', [sale.id]);
+    if (payments.some((p) => p.status !== 'cancelled')) throw new HttpError(400, 'A receipt taken with this bill is still active. Cancel it first.');
+    const [[{ n }]] = await conn.query(
+      'SELECT COUNT(*) AS n FROM customer_payment_allocations WHERE sale_id = ? OR payment_id IN (?)',
+      [sale.id, [0, ...payments.map((p) => p.id)]],
+    );
+    if (n > 0) throw new HttpError(400, 'A payment is still applied to this bill. Cancel it first.');
+    const plans = await snapshot(conn, 'instalment_plans', 'sale_id = ?', [sale.id]);
+    return [
+      { table: 'sale_lines', rows: await snapshot(conn, 'sale_lines', 'sale_id = ?', [sale.id]) },
+      { table: 'customer_payments', rows: payments },
+      { table: 'instalment_plans', rows: plans },
+      { table: 'instalment_schedule', rows: plans.length ? await snapshot(conn, 'instalment_schedule', 'plan_id IN (?)', [plans.map((p) => p.id)]) : [] },
+    ];
+  },
 });
 
 export default router;

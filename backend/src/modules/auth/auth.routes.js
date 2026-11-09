@@ -10,8 +10,15 @@ import { passwordSchema } from '../../utils/validation.js';
 import { getSetting } from '../../utils/settings.js';
 import { writeAudit } from '../../utils/audit.js';
 import { getUserProfile } from './auth.service.js';
+import { adminOnlyChanges } from '../../utils/changeGuard.js';
 
 const router = Router();
+
+// Profile for the app. needs_approval: this user's edits and deletes go to Admin (Danger Zone lock).
+async function clientProfile(userId) {
+  const user = await getUserProfile(userId);
+  return { ...user, needs_approval: !user.is_super_admin && (await adminOnlyChanges()) };
+}
 
 const loginSchema = z.object({
   username: z.string().trim().min(1, 'Enter your username'),
@@ -78,11 +85,11 @@ router.post('/login', async (req, res) => {
   await logAttempt(true);
 
   const token = jwt.sign({ sub: user.id }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
-  res.json({ token, user: await getUserProfile(user.id) });
+  res.json({ token, user: await clientProfile(user.id) });
 });
 
 router.get('/me', authenticate, async (req, res) => {
-  res.json({ user: await getUserProfile(req.user.id) });
+  res.json({ user: await clientProfile(req.user.id) });
 });
 
 router.post('/change-password', authenticate, async (req, res) => {
@@ -99,7 +106,7 @@ router.post('/change-password', authenticate, async (req, res) => {
   const hash = await bcrypt.hash(new_password, 10);
   await pool.query('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [hash, req.user.id]);
   await writeAudit(pool, req, { action: 'change_password', table: 'users', recordId: req.user.id });
-  res.json({ user: await getUserProfile(req.user.id) });
+  res.json({ user: await clientProfile(req.user.id) });
 });
 
 export default router;

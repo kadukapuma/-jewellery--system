@@ -12,6 +12,7 @@ import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
+import RecordActions from '../../components/RecordActions';
 import { formatAmount, formatDate, formatMoney } from '../../utils/format';
 import { ACCOUNTS, CASH_ENTRY_TYPES } from '../../utils/finance';
 import CashEntryDialog from './CashEntryDialog';
@@ -141,6 +142,8 @@ export default function CashBankPage() {
                     {can('cash_entries.cancel') && e.status === 'active' && (
                       <Tooltip title="Cancel entry"><IconButton size="small" onClick={() => setCancelling(e)}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                     )}
+                    <RecordActions record={e} label={e.entry_no} url={`/finance/cash-entries/${e.id}`} module="cash_entries"
+                      fields={[{ name: 'notes', label: 'Notes' }]} onDone={load} />
                   </TableCell>
                 </TableRow>
               ))}

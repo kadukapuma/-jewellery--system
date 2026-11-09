@@ -12,6 +12,7 @@ import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
+import RecordActions from '../../components/RecordActions';
 import { formatDateTime, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS } from '../../utils/payments';
 import ReceivePaymentDialog from './ReceivePaymentDialog';
@@ -140,6 +141,8 @@ export default function CustomerPaymentsPage() {
                     {can('customer_payments.cancel') && p.status === 'active' && !p.sale_id && (
                       <Tooltip title="Cancel receipt"><IconButton size="small" onClick={() => setCancelling(p)}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                     )}
+                    <RecordActions record={p} label={p.receipt_no} url={`/customer-payments/${p.id}`} module="customer_payments"
+                      fields={[{ name: 'reference_no', label: 'Reference no.' }, { name: 'cheque_date', label: 'Cheque date', type: 'date' }, { name: 'notes', label: 'Notes' }]} onDone={() => { setExpanded(null); load(); }} />
                   </TableCell>
                 </TableRow>,
                 expanded?.id === p.id && (

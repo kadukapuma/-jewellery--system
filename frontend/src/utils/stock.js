@@ -15,6 +15,7 @@ export const STOCK_REASONS = {
   damaged: 'Damaged',
   lost: 'Lost / missing',
   other: 'Other',
+  reversal: 'Reversed (undo)',
 };
 
 // Which reasons make sense for adding vs taking out stock.
@@ -23,11 +24,17 @@ export const REASONS_BY_DIRECTION = {
   out: ['damaged', 'lost', 'count_correction', 'other'],
 };
 
+// A manual adjustment that Admin (or a user with items.reverse_stock) can undo.
+export function canReverse(m) {
+  return m.movement_type === 'adjustment' && m.ref_table === 'items' && !!m.reason && !m.reversed;
+}
+
 // Short description of where a movement came from.
 export function movementLabel(m) {
   if (m.movement_type !== 'adjustment') return MOVEMENT_TYPES[m.movement_type] || m.movement_type;
   if (m.reason) return STOCK_REASONS[m.reason] || m.reason;
   if (m.ref_table === 'sales') return 'Bill cancelled';
+  if (m.ref_table === 'purchases') return 'Purchase deleted / restored';
   return 'Item added / edited';
 }
 

@@ -3,7 +3,7 @@ import {
   Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, Switch, TextField,
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 
 export default function KaratFormDialog({ karat, onClose, onSaved }) {
@@ -41,7 +41,7 @@ export default function KaratFormDialog({ karat, onClose, onSaved }) {
     const body = { ...form, purity: Number(form.purity), sort_order: Number(form.sort_order) || 0 };
     try {
       if (isNew) await api.post('/karats', body);
-      else await api.put(`/karats/${karat.id}`, body);
+      else if (isPendingApproval(await api.put(`/karats/${karat.id}`, body))) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? `${body.name.toUpperCase()} added` : 'Karat saved');
       onSaved();
     } catch (err) {

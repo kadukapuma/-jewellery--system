@@ -9,7 +9,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ReceiptIcon from '@mui/icons-material/ReceiptLongOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
-import api, { errorMessage } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
@@ -22,7 +22,7 @@ import SupplierPaymentDialog from './SupplierPaymentDialog';
 import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function SuppliersPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const notify = useNotify();
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,11 +56,12 @@ export default function SuppliersPage() {
   const overdue = suppliers.reduce((sum, s) => sum + s.overdue, 0);
   const advances = suppliers.reduce((sum, s) => sum + Math.max(0, -s.balance), 0);
 
-  const remove = async () => {
+  const remove = async (reason) => {
     setBusy(true);
     try {
-      await api.delete(`/suppliers/${deleting.id}`);
-      notify(`${deleting.name} deleted`);
+      const res = await api.delete(`/suppliers/${deleting.id}`, withReason(reason));
+      if (isPendingApproval(res)) notify(APPROVAL_MESSAGE, 'info');
+      else notify(`${deleting.name} deleted`);
       load();
     } catch (err) {
       notify(errorMessage(err), 'error');
@@ -167,10 +168,11 @@ export default function SuppliersPage() {
       <ConfirmDialog
         open={!!deleting}
         title="Delete supplier"
-        message={`Delete ${deleting?.name}? This cannot be undone.`}
-        confirmText="Delete"
+        message={`Delete ${deleting?.name}? Admin can restore it from the Recycle Bin.`}
+        confirmText={user.needs_approval ? 'Request delete' : 'Delete'}
         color="error"
         busy={busy}
+        reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
         onConfirm={remove}
         onClose={() => setDeleting(null)}
       />

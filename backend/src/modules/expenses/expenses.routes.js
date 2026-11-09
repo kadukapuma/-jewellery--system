@@ -5,6 +5,8 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 
 const router = Router();
@@ -65,7 +67,7 @@ router.post('/categories', requirePermission('expenses.create'), async (req, res
   res.status(201).json(row);
 });
 
-router.put('/categories/:id', requirePermission('expenses.create'), async (req, res) => {
+router.put('/categories/:id', requirePermission('expenses.create'), adminApproval('expense_categories.update', { table: 'expense_categories', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = categorySchema.parse(req.body);
   const [[old]] = await pool.query('SELECT * FROM expense_categories WHERE id = ?', [id]);
@@ -76,7 +78,7 @@ router.put('/categories/:id', requirePermission('expenses.create'), async (req, 
   await writeAudit(pool, req, { action: 'update', table: 'expense_categories', recordId: id, oldValues: { name: old.name, is_active: old.is_active }, newValues: data });
   const [[row]] = await pool.query('SELECT * FROM expense_categories WHERE id = ?', [id]);
   res.json(row);
-});
+}));
 
 // --- Expenses ---
 
@@ -134,6 +136,13 @@ router.post('/:id/cancel', requirePermission('expenses.cancel'), async (req, res
     await writeAudit(conn, req, { action: 'cancel', table: 'expenses', recordId: id, oldValues: { expense_no: expense.expense_no, amount: expense.amount }, newValues: { reason } });
   });
   res.json(await findExpense(pool, id));
+});
+
+cancelledRecordRoutes(router, {
+  table: 'expenses',
+  module: 'expenses',
+  fields: z.object({ reference_no: optionalText(50), notes: optionalText(255) }),
+  find: findExpense,
 });
 
 export default router;

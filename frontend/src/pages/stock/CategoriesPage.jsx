@@ -6,7 +6,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
-import api, { errorMessage } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
@@ -15,7 +15,7 @@ import CategoryFormDialog, { CATEGORY_TYPES } from './CategoryFormDialog';
 import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function CategoriesPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const notify = useNotify();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,11 +37,12 @@ export default function CategoriesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const remove = async () => {
+  const remove = async (reason) => {
     setBusy(true);
     try {
-      await api.delete(`/categories/${deleting.id}`);
-      notify(`${deleting.name} deleted`);
+      const res = await api.delete(`/categories/${deleting.id}`, withReason(reason));
+      if (isPendingApproval(res)) notify(APPROVAL_MESSAGE, 'info');
+      else notify(`${deleting.name} deleted`);
       load();
     } catch (err) {
       notify(errorMessage(err), 'error');
@@ -118,10 +119,11 @@ export default function CategoriesPage() {
       <ConfirmDialog
         open={!!deleting}
         title="Delete category"
-        message={`Delete ${deleting?.name}? This cannot be undone.`}
-        confirmText="Delete"
+        message={`Delete ${deleting?.name}? Admin can restore it from the Recycle Bin.`}
+        confirmText={user.needs_approval ? 'Request delete' : 'Delete'}
         color="error"
         busy={busy}
+        reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
         onConfirm={remove}
         onClose={() => setDeleting(null)}
       />

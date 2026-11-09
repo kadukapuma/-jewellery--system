@@ -35,6 +35,12 @@ export function hasPermission(req, code) {
   return req.user.is_super_admin || req.user.permissionSet.has(code);
 }
 
+// Admin role only (roles.is_super_admin) - user, role and settings changes and the Danger Zone.
+export function requireAdmin(req, res, next) {
+  if (req.user.is_super_admin) return next();
+  throw new HttpError(403, 'Only Admin can do this');
+}
+
 // Passes if the user has ANY of the given permission codes.
 export function requirePermission(...codes) {
   return (req, res, next) => {

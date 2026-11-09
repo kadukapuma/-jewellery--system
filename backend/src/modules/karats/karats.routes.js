@@ -4,6 +4,8 @@ import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { writeAudit } from '../../utils/audit.js';
+import { binRecord } from '../../utils/recycleBin.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 
 const router = Router();
 
@@ -53,7 +55,7 @@ router.post('/', requirePermission('karats.create'), async (req, res) => {
   res.status(201).json(await findKarat(pool, id));
 });
 
-router.put('/:id', requirePermission('karats.edit'), async (req, res) => {
+router.put('/:id', requirePermission('karats.edit'), adminApproval('karats.update', { table: 'karats', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = karatSchema.parse(req.body);
   await withTransaction(async (conn) => {
@@ -64,9 +66,9 @@ router.put('/:id', requirePermission('karats.edit'), async (req, res) => {
     await writeAudit(conn, req, { action: 'update', table: 'karats', recordId: id, oldValues: before, newValues: data });
   });
   res.json(await findKarat(pool, id));
-});
+}));
 
-router.delete('/:id', requirePermission('karats.delete'), async (req, res) => {
+router.delete('/:id', requirePermission('karats.delete'), adminApproval('karats.delete', { table: 'karats', action: 'delete' }, async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const karat = await findKarat(conn, id);
@@ -74,10 +76,11 @@ router.delete('/:id', requirePermission('karats.delete'), async (req, res) => {
     if (n > 0) {
       throw new HttpError(400, `${karat.name} has ${n} saved price(s) and cannot be deleted. Disable it instead.`);
     }
+    await binRecord(conn, req, 'karats', id);
     await conn.query('DELETE FROM karats WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'karats', recordId: id, oldValues: karat });
   });
   res.status(204).end();
-});
+}));
 
 export default router;

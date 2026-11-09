@@ -17,7 +17,7 @@ import TagTemplateDialog from './TagTemplateDialog';
 const PREVIEW_SCALE = 2.4;
 
 export default function TagTemplatesPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const notify = useNotify();
   const [data, setData] = useState(null);
   const [editing, setEditing] = useState(null); // {} = new
@@ -58,7 +58,7 @@ export default function TagTemplatesPage() {
       />
       {!data && <LinearProgress />}
 
-      {data && can('settings.edit') && (
+      {data && user.is_super_admin && (
         <SectionCard icon={<StorefrontIcon fontSize="small" />} title="Shop name on tags" sx={{ mb: 3, maxWidth: 560 }}>
           <Stack direction="row" spacing={1.5}>
             <TextField label="Shop name" value={shopName} onChange={(e) => setShopName(e.target.value)} />

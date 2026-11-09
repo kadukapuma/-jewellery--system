@@ -7,7 +7,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LabelIcon from '@mui/icons-material/LocalOfferOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
-import api, { errorMessage } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
@@ -22,7 +22,7 @@ import TablePager, { usePagedRows } from '../../components/TablePager';
 
 export default function PurchaseDetailPage() {
   const { id } = useParams();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const notify = useNotify();
   const navigate = useNavigate();
   const location = useLocation();
@@ -45,12 +45,18 @@ export default function PurchaseDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const remove = async () => {
+  const remove = async (reason) => {
     setBusy(true);
     try {
-      await api.delete(`/purchases/${id}`);
-      notify(`${purchase.purchase_no} deleted`);
-      navigate('/purchases', { replace: true });
+      const res = await api.delete(`/purchases/${id}`, withReason(reason));
+      if (isPendingApproval(res)) {
+        notify(APPROVAL_MESSAGE, 'info');
+        setDeleting(false);
+        setBusy(false);
+      } else {
+        notify(`${purchase.purchase_no} deleted`);
+        navigate('/purchases', { replace: true });
+      }
     } catch (err) {
       notify(errorMessage(err), 'error');
       setDeleting(false);
@@ -196,9 +202,10 @@ export default function PurchaseDetailPage() {
         open={deleting}
         title="Delete purchase"
         message={`Delete ${purchase.purchase_no}? Its new items are removed from stock and added stock is taken back. This only works while nothing has been sold or changed.`}
-        confirmText="Delete"
+        confirmText={user.needs_approval ? 'Request delete' : 'Delete'}
         color="error"
         busy={busy}
+        reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
         onConfirm={remove}
         onClose={() => setDeleting(false)}
       />

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, ButtonBase, Grid, LinearProgress, MenuItem, Skeleton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Typography,
+  Alert, Box, Button, ButtonBase, DialogActions, DialogContent, DialogTitle, Grid, IconButton, LinearProgress, MenuItem, Skeleton, Stack, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, Tooltip, Typography,
 } from '@mui/material';
 import TextField from '../../components/TextField';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
-import api, { errorMessage } from '../../api/client';
+import DeleteIcon from '@mui/icons-material/DeleteOutlined';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
@@ -17,6 +18,8 @@ import { ink, stone } from '../../theme';
 import UpdatePricesDialog from './UpdatePricesDialog';
 import PriceHistoryChart from './PriceHistoryChart';
 import TablePager, { usePagedRows } from '../../components/TablePager';
+import Dialog from '../../components/Dialog';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 const TONES = ['gold', 'light', 'gray'];
 const PERIODS = [
@@ -29,6 +32,92 @@ const PERIODS = [
 function changeOf(row) {
   if (row.previous_pound_price === null) return null;
   return Math.round(((row.pound_price - row.previous_pound_price) / row.previous_pound_price) * 10000) / 100;
+}
+
+// Fix or remove a wrongly typed price. The server refuses prices a bill has already used.
+function PriceRowActions({ price, onDone }) {
+  const { can, user } = useAuth();
+  const notify = useNotify();
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [form, setForm] = useState({ pound_price: '', notes: '' });
+  const [errors, setErrors] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const done = (res, message) => {
+    notify(isPendingApproval(res) ? APPROVAL_MESSAGE : message, isPendingApproval(res) ? 'info' : 'success');
+    onDone();
+  };
+  const save = async () => {
+    setBusy(true);
+    try {
+      const res = await api.put(`/gold-prices/${price.id}`, { pound_price: Number(form.pound_price), notes: form.notes });
+      setEditing(false);
+      done(res, 'Price fixed');
+    } catch (err) {
+      setErrors(fieldErrors(err));
+      notify(errorMessage(err), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (reason) => {
+    setBusy(true);
+    try {
+      const res = await api.delete(`/gold-prices/${price.id}`, withReason(reason));
+      done(res, 'Price deleted');
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    } finally {
+      setDeleting(false);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {can('gold_prices.edit') && (
+        <Tooltip title="Fix this price">
+          <IconButton size="small" onClick={() => { setForm({ pound_price: String(price.pound_price), notes: price.notes || '' }); setErrors({}); setEditing(true); }}>
+            <EditIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
+      {can('gold_prices.delete') && (
+        <Tooltip title="Delete this price">
+          <IconButton size="small" color="error" onClick={() => setDeleting(true)}><DeleteIcon fontSize="small" /></IconButton>
+        </Tooltip>
+      )}
+      <Dialog open={editing} onClose={() => setEditing(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Fix {price.karat} price</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>Only a price that no bill has used can be fixed. Otherwise enter a new price.</Alert>
+          <Stack spacing={2}>
+            <TextField label="Pound price" type="number" value={form.pound_price} onChange={(e) => setForm({ ...form, pound_price: e.target.value })}
+              error={!!errors.pound_price} helperText={errors.pound_price} />
+            <TextField label="Note" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditing(false)}>Cancel</Button>
+          <Button variant="contained" onClick={save} disabled={busy || !(Number(form.pound_price) > 0)}>
+            {user.needs_approval ? 'Send for approval' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <ConfirmDialog
+        open={deleting}
+        title={`Delete ${price.karat} price`}
+        message={`Delete the price of ${formatMoney(price.pound_price)} from ${formatDateTime(price.effective_at)}? Only a price no bill has used can be deleted. Admin can restore it from the Recycle Bin.`}
+        confirmText={user.needs_approval ? 'Request delete' : 'Delete'}
+        color="error"
+        busy={busy}
+        reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
+        onConfirm={remove}
+        onClose={() => setDeleting(false)}
+      />
+    </>
+  );
 }
 
 export default function GoldPricesPage() {
@@ -143,6 +232,7 @@ export default function GoldPricesPage() {
                   <TableCell align="right">Change</TableCell>
                   <TableCell>Entered by</TableCell>
                   <TableCell>Note</TableCell>
+                  {(can('gold_prices.edit') || can('gold_prices.delete')) && <TableCell />}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -158,11 +248,14 @@ export default function GoldPricesPage() {
                       </TableCell>
                       <TableCell>{h.entered_by_name}</TableCell>
                       <TableCell sx={{ color: 'text.secondary' }}>{h.notes}</TableCell>
+                      {(can('gold_prices.edit') || can('gold_prices.delete')) && (
+                        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}><PriceRowActions price={h} onDone={loadCurrent} /></TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
                 {!historyLoading && !history.length && (
-                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3, color: 'text.secondary' }}>No prices in this period</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3, color: 'text.secondary' }}>No prices in this period</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

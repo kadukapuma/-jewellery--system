@@ -5,6 +5,8 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { binRecord } from '../../utils/recycleBin.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 
 const router = Router();
 
@@ -49,7 +51,7 @@ router.post('/', requirePermission('categories.create'), async (req, res) => {
   res.status(201).json(await findCategory(pool, id));
 });
 
-router.put('/:id', requirePermission('categories.edit'), async (req, res) => {
+router.put('/:id', requirePermission('categories.edit'), adminApproval('categories.update', { table: 'categories', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = categorySchema.parse(req.body);
   await withTransaction(async (conn) => {
@@ -60,18 +62,19 @@ router.put('/:id', requirePermission('categories.edit'), async (req, res) => {
     await writeAudit(conn, req, { action: 'update', table: 'categories', recordId: id, oldValues: before, newValues: data });
   });
   res.json(await findCategory(pool, id));
-});
+}));
 
-router.delete('/:id', requirePermission('categories.delete'), async (req, res) => {
+router.delete('/:id', requirePermission('categories.delete'), adminApproval('categories.delete', { table: 'categories', action: 'delete' }, async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const category = await findCategory(conn, id);
     const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM items WHERE category_id = ?', [id]);
     if (n > 0) throw new HttpError(400, `${category.name} has ${n} item(s) and cannot be deleted. Disable it instead.`);
+    await binRecord(conn, req, 'categories', id);
     await conn.query('DELETE FROM categories WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'categories', recordId: id, oldValues: category });
   });
   res.status(204).end();
-});
+}));
 
 export default router;

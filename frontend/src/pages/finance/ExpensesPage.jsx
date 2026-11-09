@@ -12,6 +12,7 @@ import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
+import RecordActions from '../../components/RecordActions';
 import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS } from '../../utils/payments';
 import ExpenseDialog from './ExpenseDialog';
@@ -145,6 +146,8 @@ export default function ExpensesPage() {
                     {can('expenses.cancel') && e.status === 'active' && (
                       <Tooltip title="Cancel expense"><IconButton size="small" onClick={() => setCancelling(e)}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                     )}
+                    <RecordActions record={e} label={e.expense_no} url={`/expenses/${e.id}`} module="expenses"
+                      fields={[{ name: 'reference_no', label: 'Reference no.' }, { name: 'notes', label: 'Notes' }]} onDone={load} />
                   </TableCell>
                 </TableRow>
               ))}

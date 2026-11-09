@@ -2,9 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { requirePermission } from '../../middleware/auth.js';
-import { HttpError } from '../../utils/httpError.js';
+import { HttpError, parseId } from '../../utils/httpError.js';
 import { idSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { adminApproval } from '../../utils/changeGuard.js';
+import { binRecord } from '../../utils/recycleBin.js';
 import { gramFromPound } from '../../services/pricing.js';
 import { getCurrentPrices, getGramsPerPound, getLiveGoldPrice } from './gold-prices.service.js';
 
@@ -87,5 +89,54 @@ router.post('/', requirePermission('gold_prices.update'), async (req, res) => {
 
   res.status(201).json({ grams_per_pound: gramsPerPound, prices: await getCurrentPrices() });
 });
+
+// A price row can be fixed or removed only while no bill has used it; bills keep the price they were made with.
+async function findUnusedPrice(conn, id) {
+  const [[price]] = await conn.query(
+    'SELECT gp.*, k.name AS karat FROM gold_prices gp JOIN karats k ON k.id = gp.karat_id WHERE gp.id = ? FOR UPDATE',
+    [id],
+  );
+  if (!price) throw new HttpError(404, 'Gold price not found');
+  const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM sale_lines WHERE gold_price_id = ?', [id]);
+  if (n > 0) throw new HttpError(400, `This ${price.karat} price was used on ${n} bill line(s) and cannot be changed. Enter a new price instead.`);
+  return price;
+}
+
+const fixSchema = z.object({
+  pound_price: z.coerce.number({ error: 'Enter a price' }).positive('Price must be above 0').max(99999999999, 'Price is too large'),
+  notes: optionalText(255),
+});
+
+router.put('/:id', requirePermission('gold_prices.edit'), adminApproval('gold_prices.edit', { table: 'gold_prices', action: 'update' }, async (req, res) => {
+  const id = parseId(req.params.id);
+  const data = fixSchema.parse(req.body);
+  const gramsPerPound = await getGramsPerPound();
+  await withTransaction(async (conn) => {
+    const before = await findUnusedPrice(conn, id);
+    const gramPrice = gramFromPound(data.pound_price, gramsPerPound);
+    await conn.query('UPDATE gold_prices SET pound_price = ?, gram_price = ?, notes = ? WHERE id = ?', [data.pound_price, gramPrice, data.notes, id]);
+    await writeAudit(conn, req, {
+      action: 'update',
+      table: 'gold_prices',
+      recordId: id,
+      oldValues: { karat: before.karat, pound_price: before.pound_price, gram_price: before.gram_price, notes: before.notes },
+      newValues: { pound_price: data.pound_price, gram_price: gramPrice, notes: data.notes },
+    });
+  });
+  res.json({ grams_per_pound: gramsPerPound, prices: await getCurrentPrices() });
+}));
+
+router.delete('/:id', requirePermission('gold_prices.delete'), adminApproval('gold_prices.delete', { table: 'gold_prices', action: 'delete' }, async (req, res) => {
+  const id = parseId(req.params.id);
+  await withTransaction(async (conn) => {
+    const price = await findUnusedPrice(conn, id);
+    const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM gold_prices WHERE karat_id = ?', [price.karat_id]);
+    if (n <= 1) throw new HttpError(400, `This is the only ${price.karat} price. Enter a new one before deleting it.`);
+    await binRecord(conn, req, 'gold_prices', id);
+    await conn.query('DELETE FROM gold_prices WHERE id = ?', [id]);
+    await writeAudit(conn, req, { action: 'delete', table: 'gold_prices', recordId: id, oldValues: price });
+  });
+  res.status(204).end();
+}));
 
 export default router;

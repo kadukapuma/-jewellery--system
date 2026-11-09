@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
-import { requirePermission } from '../../middleware/auth.js';
+import { requireAdmin, requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { idSchema, optionalEmail, optionalText, passwordSchema } from '../../utils/validation.js';import { writeAudit } from '../../utils/audit.js';
 
@@ -104,7 +104,7 @@ router.post('/', requirePermission('users.create'), async (req, res) => {
   res.status(201).json(await findUser(pool, id));
 });
 
-router.put('/:id', requirePermission('users.edit'), async (req, res) => {
+router.put('/:id', requireAdmin, requirePermission('users.edit'), async (req, res) => {
   const id = parseId(req.params.id);
   const data = updateSchema.parse(req.body);
 
@@ -132,7 +132,7 @@ router.put('/:id', requirePermission('users.edit'), async (req, res) => {
 });
 
 // "Delete" disables the user so their history (bills, prices) stays linked.
-router.delete('/:id', requirePermission('users.delete'), async (req, res) => {
+router.delete('/:id', requireAdmin, requirePermission('users.delete'), async (req, res) => {
   const id = parseId(req.params.id);
   if (id === req.user.id) throw new HttpError(400, 'You cannot disable your own account');
 
@@ -146,7 +146,7 @@ router.delete('/:id', requirePermission('users.delete'), async (req, res) => {
   res.json(await findUser(pool, id));
 });
 
-router.post('/:id/reset-password', requirePermission('users.edit'), async (req, res) => {
+router.post('/:id/reset-password', requireAdmin, requirePermission('users.edit'), async (req, res) => {
   const id = parseId(req.params.id);
   const { password } = resetPasswordSchema.parse(req.body);
   const before = await findUser(pool, id);
@@ -162,7 +162,7 @@ router.post('/:id/reset-password', requirePermission('users.edit'), async (req, 
   res.json(await findUser(pool, id));
 });
 
-router.post('/:id/unlock', requirePermission('users.edit'), async (req, res) => {
+router.post('/:id/unlock', requireAdmin, requirePermission('users.edit'), async (req, res) => {
   const id = parseId(req.params.id);
   await findUser(pool, id);
   await pool.query('UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = ?', [id]);
@@ -182,7 +182,7 @@ router.get('/:id/permissions', requirePermission('users.view'), async (req, res)
   });
 });
 
-router.put('/:id/permissions', requirePermission('users.edit'), async (req, res) => {
+router.put('/:id/permissions', requireAdmin, requirePermission('users.edit'), async (req, res) => {
   const id = parseId(req.params.id);
   const { overrides } = overridesSchema.parse(req.body);
   const user = await findUser(pool, id);

@@ -5,6 +5,9 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { checkPriceRange, dateSchema, gramsSchema, optionalText, priceRangeFields } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
+import { snapshot } from '../../utils/recycleBin.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { getCurrentPrice } from '../gold-prices/gold-prices.service.js';
 
@@ -219,7 +222,7 @@ router.post('/', requirePermission('craft_jobs.create'), async (req, res) => {
   res.status(201).json(await findJob(pool, id));
 });
 
-router.put('/:id', requirePermission('craft_jobs.edit'), async (req, res) => {
+router.put('/:id', requirePermission('craft_jobs.edit'), adminApproval('craft_jobs.update', { table: 'craft_jobs', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = editSchema.parse(req.body);
   await withTransaction(async (conn) => {
@@ -233,7 +236,7 @@ router.put('/:id', requirePermission('craft_jobs.edit'), async (req, res) => {
     await writeAudit(conn, req, { action: 'update', table: 'craft_jobs', recordId: id, oldValues: before, newValues: data });
   });
   res.json(await findJob(pool, id));
-});
+}));
 
 // Receive the finished piece. Wastage = gold given - finished weight; the customer pays for all
 // the gold given (net + wastage) plus the making charge.
@@ -352,6 +355,21 @@ router.post('/:id/cancel', requirePermission('craft_jobs.delete'), async (req, r
     await writeAudit(conn, req, { action: 'cancel', table: 'craft_jobs', recordId: id, newValues: { reason } });
   });
   res.json(await findJob(pool, id));
+});
+
+// A cancelled job can be deleted with its gold entries, as long as they cancel each other out
+// (issue + gold returned) and no craftsman payment points at it.
+cancelledRecordRoutes(router, {
+  table: 'craft_jobs',
+  module: 'craft_jobs',
+  children: async (conn, job) => {
+    const ledgerRows = await snapshot(conn, 'craftsman_gold_ledger', 'craft_job_id = ?', [job.id]);
+    const held = ledgerRows.reduce((sum, r) => sum + Number(r.weight_g), 0);
+    if (Math.abs(held) > 0.0005) throw new HttpError(400, `${job.job_no} still changes the craftsman's gold balance and cannot be deleted.`);
+    const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM craftsman_payments WHERE craft_job_id = ?', [job.id]);
+    if (n > 0) throw new HttpError(400, `${job.job_no} has craftsman payments. Delete those first.`);
+    return [{ table: 'craftsman_gold_ledger', rows: ledgerRows }];
+  },
 });
 
 export default router;

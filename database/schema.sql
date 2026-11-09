@@ -127,6 +127,50 @@ CREATE TABLE audit_logs (
 );
 
 -- ---------------------------------------------------------------------
+-- 1h. CHANGE REQUESTS (edits / deletes by non-admins wait for Admin)
+--     and DELETED RECORDS (recycle bin - Admin can restore)
+-- ---------------------------------------------------------------------
+CREATE TABLE change_requests (
+  id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  action           ENUM('update','delete') NOT NULL,
+  route_key        VARCHAR(60)  NOT NULL,               -- e.g. 'customers.update'
+  table_name       VARCHAR(50)  NOT NULL,
+  record_id        INT UNSIGNED NOT NULL,
+  record_label     VARCHAR(150) NULL,
+  params           JSON NOT NULL,                       -- replayed when Admin approves
+  payload          JSON NULL,
+  old_values       JSON NULL,                           -- the record when the request was made
+  reason           VARCHAR(255) NULL,
+  status           ENUM('pending','approved','rejected','failed') NOT NULL DEFAULT 'pending',
+  requested_by     INT UNSIGNED NOT NULL,
+  requested_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_by      INT UNSIGNED NULL,
+  reviewed_at      DATETIME NULL,
+  review_note      VARCHAR(255) NULL,
+  CONSTRAINT fk_cr_requester FOREIGN KEY (requested_by) REFERENCES users(id),
+  CONSTRAINT fk_cr_reviewer  FOREIGN KEY (reviewed_by)  REFERENCES users(id),
+  INDEX idx_cr_status (status, requested_at),
+  INDEX idx_cr_user (requested_by, requested_at)
+);
+
+CREATE TABLE deleted_records (
+  id                 INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  table_name         VARCHAR(50)  NOT NULL,
+  record_id          INT UNSIGNED NOT NULL,
+  record_label       VARCHAR(150) NULL,
+  data               JSON NOT NULL,                     -- [{ table, rows: [...] }] in re-insert order
+  extra              JSON NULL,                         -- side effects to undo on restore
+  deleted_by         INT UNSIGNED NOT NULL,
+  deleted_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  change_request_id  INT UNSIGNED NULL,
+  restored_by        INT UNSIGNED NULL,
+  restored_at        DATETIME NULL,
+  CONSTRAINT fk_dr_deleter  FOREIGN KEY (deleted_by)  REFERENCES users(id),
+  CONSTRAINT fk_dr_restorer FOREIGN KEY (restored_by) REFERENCES users(id),
+  INDEX idx_dr_time (deleted_at)
+);
+
+-- ---------------------------------------------------------------------
 -- 2. SETTINGS (key/value, e.g. grams_per_pound = 8)
 -- ---------------------------------------------------------------------
 CREATE TABLE settings (
@@ -355,6 +399,7 @@ CREATE TABLE sales (
   balance              DECIMAL(14,2) NOT NULL DEFAULT 0,  -- total - paid_amount (credit)
   payment_status       ENUM('unpaid','partial','paid') NOT NULL DEFAULT 'paid',
   due_date             DATE NULL,                         -- when the credit must be settled
+  notes                VARCHAR(255) NULL,
   status               ENUM('completed','cancelled') NOT NULL DEFAULT 'completed',
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -703,7 +748,8 @@ INSERT INTO settings (setting_key, setting_value) VALUES
   ('shop_phone', ''),
   ('invoice_footer', 'Thank you! Please keep this bill for exchanges.'),
   ('max_failed_logins', '5'),
-  ('lock_minutes', '15');
+  ('lock_minutes', '15'),
+  ('admin_only_changes', '1');               -- Danger Zone: only Admin edits / deletes directly
 
 -- Roles
 INSERT INTO roles (name, description, is_super_admin, is_system) VALUES
@@ -797,6 +843,25 @@ WHERE r.name = 'Stock Keeper'
        OR p.code IN ('dashboard.view','gold_prices.view','karats.view','reports.stock','reports.wastage',
                      'craftsman_account.view','tags.print'))
   AND p.code NOT LIKE '%.delete';
+
+-- Safe edit / delete of money records and gold prices (Danger Zone). Added after the role grants
+-- above so only Admin has them until granted in Roles.
+INSERT INTO permissions (code, module, action, description, sort_order) VALUES
+  ('sales.edit',                'sales',              'edit',        'Change customer, due date or notes of a bill', 216),
+  ('sales.delete',              'sales',              'delete',      'Delete a cancelled bill',                      217),
+  ('customer_payments.edit',    'customer_payments',  'edit',        'Change reference or notes of a receipt',      253),
+  ('customer_payments.delete',  'customer_payments',  'delete',      'Delete a cancelled receipt',                  254),
+  ('supplier_payments.edit',    'supplier_payments',  'edit',        'Change reference or notes of a payment',      263),
+  ('supplier_payments.delete',  'supplier_payments',  'delete',      'Delete a cancelled supplier payment',         264),
+  ('craftsman_payments.edit',   'craftsman_payments', 'edit',        'Change notes of a craftsman payment',         274),
+  ('craftsman_payments.delete', 'craftsman_payments', 'delete',      'Delete a cancelled craftsman payment',        275),
+  ('gold_prices.edit',          'gold_prices',        'edit',        'Fix a gold price no bill has used',           202),
+  ('gold_prices.delete',        'gold_prices',        'delete',      'Delete a gold price no bill has used',        203),
+  ('items.reverse_stock',       'items',              'reverse_stock','Reverse a manual stock adjustment',            57),
+  ('expenses.edit',             'expenses',           'edit',        'Change reference or notes of an expense',     296),
+  ('expenses.delete',           'expenses',           'delete',      'Delete a cancelled expense',                  297),
+  ('cash_entries.edit',         'cash_entries',       'edit',        'Change notes of a cash / bank entry',         298),
+  ('cash_entries.delete',       'cash_entries',       'delete',      'Delete a cancelled cash / bank entry',        299);
 
 -- The first Admin user is created by the app's seed script (bcrypt password,
 -- must_change_password = 1), because a password hash cannot be written here.

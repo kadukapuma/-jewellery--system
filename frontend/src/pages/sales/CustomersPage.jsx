@@ -9,7 +9,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ReceiptIcon from '@mui/icons-material/ReceiptLongOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
-import api, { errorMessage } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
@@ -21,7 +21,7 @@ import CustomerStatementDialog from './CustomerStatementDialog';
 import ReceivePaymentDialog from './ReceivePaymentDialog';
 
 export default function CustomersPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const notify = useNotify();
   const [searchText, setSearchText] = useState('');
   const [filters, setFilters] = useState({ search: '', owing: false });
@@ -51,11 +51,12 @@ export default function CustomersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const remove = async () => {
+  const remove = async (reason) => {
     setBusy(true);
     try {
-      await api.delete(`/customers/${deleting.id}`);
-      notify(`${deleting.name} deleted`);
+      const res = await api.delete(`/customers/${deleting.id}`, withReason(reason));
+      if (isPendingApproval(res)) notify(APPROVAL_MESSAGE, 'info');
+      else notify(`${deleting.name} deleted`);
       load();
     } catch (err) {
       notify(errorMessage(err), 'error');
@@ -147,8 +148,9 @@ export default function CustomersPage() {
           onReceive={can('customer_payments.create') ? (c) => { setStatementFor(null); setReceivingFor(c); } : null} />
       )}
       {receivingFor && <ReceivePaymentDialog customer={receivingFor} onClose={() => setReceivingFor(null)} onSaved={() => { setReceivingFor(null); load(); }} />}
-      <ConfirmDialog open={!!deleting} title="Delete customer" message={`Delete ${deleting?.name}? This cannot be undone.`}
-        confirmText="Delete" color="error" busy={busy} onConfirm={remove} onClose={() => setDeleting(null)} />
+      <ConfirmDialog open={!!deleting} title="Delete customer" message={`Delete ${deleting?.name}? Admin can restore it from the Recycle Bin.`}
+        confirmText={user.needs_approval ? 'Request delete' : 'Delete'} color="error" busy={busy} reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
+        onConfirm={remove} onClose={() => setDeleting(null)} />
     </>
   );
 }

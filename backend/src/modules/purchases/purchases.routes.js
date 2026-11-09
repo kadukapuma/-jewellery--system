@@ -5,6 +5,8 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, checkPriceRange, dateSchema, gramsSchema, optionalText, priceRangeFields } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { adminApproval } from '../../utils/changeGuard.js';
+import { moveToBin, snapshot } from '../../utils/recycleBin.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocatePayment, applyAdvances, recomputePurchase } from '../supplier-payments/supplier-payments.service.js';
 
@@ -234,13 +236,22 @@ router.post('/', requirePermission('purchases.create'), async (req, res) => {
 
 // A purchase can be removed only while nothing has happened to it yet: no payments,
 // and every item it brought in is still untouched in stock.
-router.delete('/:id', requirePermission('purchases.delete'), async (req, res) => {
+router.delete('/:id', requirePermission('purchases.delete'), adminApproval('purchases.delete', { table: 'purchases', action: 'delete' }, async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const purchase = await findPurchase(conn, id);
     if (purchase.payments.length) {
       throw new HttpError(400, `${purchase.purchase_no} has payments. Cancel the payments first.`);
     }
+    // Everything removed goes to the recycle bin; stock taken back from existing items is put back on restore.
+    const bin = {
+      purchases: await snapshot(conn, 'purchases', 'id = ?', [id]),
+      items: [],
+      purchase_lines: await snapshot(conn, 'purchase_lines', 'purchase_id = ?', [id]),
+      stock_movements: [],
+      tag_print_logs: [],
+    };
+    const stockReturns = [];
     for (const line of purchase.lines) {
       const [[item]] = await conn.query('SELECT id, stock_qty, status FROM items WHERE id = ? FOR UPDATE', [line.item_id]);
       const [[used]] = await conn.query(
@@ -252,6 +263,9 @@ router.delete('/:id', requirePermission('purchases.delete'), async (req, res) =>
         if (used.n > 0 || item.stock_qty !== line.qty || item.status !== 'in_stock') {
           throw new HttpError(400, `${line.item_code} has been sold, changed or used. This purchase cannot be deleted.`);
         }
+        bin.items.push(...await snapshot(conn, 'items', 'id = ?', [item.id]));
+        bin.stock_movements.push(...await snapshot(conn, 'stock_movements', 'item_id = ?', [item.id]));
+        bin.tag_print_logs.push(...await snapshot(conn, 'tag_print_logs', 'item_id = ?', [item.id]));
         await conn.query('DELETE FROM purchase_lines WHERE id = ?', [line.id]);
         await conn.query('DELETE FROM tag_print_logs WHERE item_id = ?', [item.id]);
         await conn.query('DELETE FROM stock_movements WHERE item_id = ?', [item.id]);
@@ -264,9 +278,17 @@ router.delete('/:id', requirePermission('purchases.delete'), async (req, res) =>
            VALUES (?, 'adjustment', ?, ?, 'purchases', ?, ?)`,
           [item.id, -line.qty, -line.weight_g, id, req.user.id],
         );
+        stockReturns.push({ item_id: item.id, qty: line.qty, weight_g: line.weight_g });
         await conn.query('DELETE FROM purchase_lines WHERE id = ?', [line.id]);
       }
     }
+    await moveToBin(conn, req, {
+      table: 'purchases',
+      recordId: id,
+      label: purchase.purchase_no,
+      parts: Object.entries(bin).map(([table, rows]) => ({ table, rows })),
+      extra: stockReturns.length ? { stock_returns: stockReturns } : null,
+    });
     await conn.query('DELETE FROM purchases WHERE id = ?', [id]);
     await writeAudit(conn, req, {
       action: 'delete',
@@ -276,6 +298,6 @@ router.delete('/:id', requirePermission('purchases.delete'), async (req, res) =>
     });
   });
   res.status(204).end();
-});
+}));
 
 export default router;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../../config/db.js';
-import { requirePermission } from '../../middleware/auth.js';
+import { requireAdmin, requirePermission } from '../../middleware/auth.js';
 import { HttpError } from '../../utils/httpError.js';
 import { writeAudit } from '../../utils/audit.js';
 
@@ -30,7 +30,7 @@ router.get('/', requirePermission('settings.edit'), async (req, res) => {
   res.json(Object.fromEntries(rows.map((r) => [r.setting_key, r.setting_value])));
 });
 
-router.put('/:key', requirePermission('settings.edit'), async (req, res) => {
+router.put('/:key', requireAdmin, requirePermission('settings.edit'), async (req, res) => {
   const schema = EDITABLE[req.params.key];
   if (!schema) throw new HttpError(400, 'This setting cannot be changed here');
   const value = schema.parse(req.body.value);

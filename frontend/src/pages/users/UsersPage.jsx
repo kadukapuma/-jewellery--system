@@ -61,7 +61,8 @@ export default function UsersPage() {
   }, [users, search]);
 
   // Only an Admin can manage Admin users (the server enforces this too).
-  const canManage = (u) => me.is_super_admin || !u.is_super_admin;
+  // Changing users is Admin only (Danger Zone rule); others can still view and add.
+  const canManage = () => me.is_super_admin;
 
   const unlock = async (u) => {
     try {

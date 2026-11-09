@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, Checkbox, Divider, FormControlLabel, Grid, IconButton, InputAdornment, MenuItem, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Typography,
@@ -72,6 +72,22 @@ export default function PosPage() {
   const [credit, setCredit] = useState({ due_date: '', useInstalments: false, count: 3, frequency: 'monthly', start_date: todayYmd() });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const location = useLocation();
+  const correcting = location.state?.correcting;
+
+  // "Correct bill": the cancelled bill's items, prices and customer, ready to change and save as a new bill.
+  useEffect(() => {
+    if (!correcting) return undefined;
+    let active = true;
+    Promise.all([
+      Promise.all(correcting.lines.map((l) => api.get(`/items/${l.item_id}`)
+        .then((r) => ({ item: r.data, qty: l.qty, unitPrice: String(l.unit_price) })))),
+      correcting.customer_id ? api.get(`/customers/${correcting.customer_id}`).then((r) => r.data) : null,
+    ])
+      .then(([items, cust]) => { if (active) { setCart(items); setCustomer(cust); } })
+      .catch((err) => active && setError(errorMessage(err)));
+    return () => { active = false; };
+  }, [correcting]);
 
   const lines = cart.map((c) => {
     const price = priceLine(c.item, c.qty, c.unitPrice);
@@ -173,6 +189,11 @@ export default function PosPage() {
     <Grid container spacing={2.5}>
       <Grid size={{ xs: 12, lg: 8 }}>
         <Typography sx={{ fontWeight: 600, fontSize: { xs: 30, md: 40 }, letterSpacing: -1.5, mb: 2 }}>New sale</Typography>
+        {correcting && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Correcting {correcting.invoice_no} (now cancelled). Fix the items, prices or customer, then save the new bill.
+          </Alert>
+        )}
         <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
           <TextField
             inputRef={scanRef}

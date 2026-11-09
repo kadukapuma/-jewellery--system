@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 
 export const CATEGORY_TYPES = { jewellery: 'Jewellery', biscuit: 'Gold biscuit', other: 'Other' };
@@ -36,7 +36,7 @@ export default function CategoryFormDialog({ category, onClose, onSaved }) {
     setBusy(true);
     try {
       if (isNew) await api.post('/categories', form);
-      else await api.put(`/categories/${category.id}`, form);
+      else if (isPendingApproval(await api.put(`/categories/${category.id}`, form))) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? `${form.name} added` : 'Category saved');
       onSaved();
     } catch (err) {

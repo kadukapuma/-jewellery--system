@@ -15,6 +15,7 @@ import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
+import RecordActions from '../../components/RecordActions';
 import { formatDate } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
 import PrintTagsDialog from '../tags/PrintTagsDialog';
@@ -190,6 +191,7 @@ export default function CraftJobsPage() {
                       {j.status === 'issued' && can('craft_jobs.delete') && (
                         <Tooltip title="Cancel job"><IconButton size="small" onClick={() => setCancelling(j)}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                       )}
+                      <RecordActions record={j} label={j.job_no} url={`/craft-jobs/${j.id}`} module="craft_jobs" onDone={load} />
                       {j.status === 'completed' && j.item_id && can('tags.print') && (
                         <Tooltip title="Print tag"><IconButton size="small" onClick={() => printFinished(j.item_id)}><LabelIcon fontSize="small" /></IconButton></Tooltip>
                       )}

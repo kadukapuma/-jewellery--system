@@ -5,6 +5,8 @@ import { hasPermission, requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { checkPriceRange, dateSchema, gramsSchema as grams, optionalText, priceRangeFields } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { moveToBin, snapshot } from '../../utils/recycleBin.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { ITEM_SELECT, findItem, presentItem } from './items.service.js';
 
@@ -69,7 +71,8 @@ const movementListSchema = z.object({
 // Movement + item, who did it and the bill / purchase / job number it came from.
 const MOVEMENT_SELECT = `
   SELECT sm.*, i.item_code, i.barcode, i.name AS item_name, k.name AS karat_name, u.name AS created_by_name,
-         COALESCE(s.invoice_no, p.purchase_no, j.job_no) AS ref_no
+         COALESCE(s.invoice_no, p.purchase_no, j.job_no) AS ref_no,
+         EXISTS (SELECT 1 FROM stock_movements r WHERE r.ref_table = 'stock_movements' AND r.ref_id = sm.id) AS reversed
   FROM stock_movements sm
   JOIN items i ON i.id = sm.item_id
   JOIN karats k ON k.id = i.karat_id
@@ -232,6 +235,40 @@ router.post('/:id/stock', requirePermission('items.adjust_stock'), async (req, r
   res.status(201).json(await findItem(pool, id, req));
 });
 
+// Stock history is never deleted. A wrong manual adjustment is undone by an opposite entry.
+router.post('/stock-movements/:id/reverse', requirePermission('items.reverse_stock'), adminApproval('items.reverse_stock', { table: 'stock_movements', action: 'update' }, async (req, res) => {
+  const id = parseId(req.params.id);
+  const itemId = await withTransaction(async (conn) => {
+    const [[m]] = await conn.query('SELECT * FROM stock_movements WHERE id = ? FOR UPDATE', [id]);
+    if (!m) throw new HttpError(404, 'Stock entry not found');
+    if (m.movement_type !== 'adjustment' || m.ref_table !== 'items' || !m.reason) {
+      throw new HttpError(400, 'Only manual stock adjustments can be reversed. Purchases, bills and craft jobs are undone by cancelling them.');
+    }
+    const [[done]] = await conn.query("SELECT id FROM stock_movements WHERE ref_table = 'stock_movements' AND ref_id = ?", [id]);
+    if (done) throw new HttpError(400, 'This adjustment was already reversed');
+    const [[item]] = await conn.query('SELECT * FROM items WHERE id = ? FOR UPDATE', [m.item_id]);
+    if (item.status === 'with_craftsman') throw new HttpError(400, 'This item is with a craftsman. Receive it back first.');
+    const qty = item.stock_qty - m.qty_change;
+    if (qty < 0) throw new HttpError(400, `Only ${item.stock_qty} of ${item.item_code} in stock, so this cannot be reversed`);
+    const status = qty > 0 && item.status === 'sold' ? 'in_stock' : item.status;
+    await conn.query('UPDATE items SET stock_qty = ?, status = ? WHERE id = ?', [qty, status, item.id]);
+    await conn.query(
+      `INSERT INTO stock_movements (item_id, movement_type, qty_change, weight_change_g, ref_table, ref_id, reason, note, created_by)
+       VALUES (?, 'adjustment', ?, ?, 'stock_movements', ?, 'reversal', ?, ?)`,
+      [item.id, -m.qty_change, -Number(m.weight_change_g), id, `Reverses entry #${id}`, req.user.id],
+    );
+    await writeAudit(conn, req, {
+      action: 'stock_reverse',
+      table: 'items',
+      recordId: item.id,
+      oldValues: { stock_qty: item.stock_qty, movement_id: id, qty_change: m.qty_change },
+      newValues: { stock_qty: qty, status },
+    });
+    return item.id;
+  });
+  res.status(201).json(await findItem(pool, itemId, req));
+}));
+
 // Items entered here are opening stock; purchases and craft jobs create their own items later.
 router.post('/', requirePermission('items.create'), async (req, res) => {
   const data = createSchema.parse(req.body);
@@ -254,7 +291,7 @@ router.post('/', requirePermission('items.create'), async (req, res) => {
   res.status(201).json(await findItem(pool, id, req));
 });
 
-router.put('/:id', requirePermission('items.edit'), async (req, res) => {
+router.put('/:id', requirePermission('items.edit'), adminApproval('items.update', { table: 'items', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = updateSchema.parse(req.body);
 
@@ -280,10 +317,10 @@ router.put('/:id', requirePermission('items.edit'), async (req, res) => {
     await writeAudit(conn, req, { action: 'update', table: 'items', recordId: id, oldValues: oldLogged, newValues: newLogged });
   });
   res.json(await findItem(pool, id, req));
-});
+}));
 
 // Only items with no purchase, sale or craft history can be removed; others are marked Inactive.
-router.delete('/:id', requirePermission('items.delete'), async (req, res) => {
+router.delete('/:id', requirePermission('items.delete'), adminApproval('items.delete', { table: 'items', action: 'delete' }, async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const [[item]] = await conn.query('SELECT id, item_code, name FROM items WHERE id = ? FOR UPDATE', [id]);
@@ -295,12 +332,22 @@ router.delete('/:id', requirePermission('items.delete'), async (req, res) => {
       [id, id, id, id],
     );
     if (usage.n > 0) throw new HttpError(400, `${item.item_code} has purchase, sale or craft history. Mark it Inactive instead.`);
+    await moveToBin(conn, req, {
+      table: 'items',
+      recordId: id,
+      label: item.item_code,
+      parts: [
+        { table: 'items', rows: await snapshot(conn, 'items', 'id = ?', [id]) },
+        { table: 'stock_movements', rows: await snapshot(conn, 'stock_movements', 'item_id = ?', [id]) },
+        { table: 'tag_print_logs', rows: await snapshot(conn, 'tag_print_logs', 'item_id = ?', [id]) },
+      ],
+    });
     await conn.query('DELETE FROM tag_print_logs WHERE item_id = ?', [id]);
     await conn.query('DELETE FROM stock_movements WHERE item_id = ?', [id]);
     await conn.query('DELETE FROM items WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'items', recordId: id, oldValues: item });
   });
   res.status(204).end();
-});
+}));
 
 export default router;

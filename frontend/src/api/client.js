@@ -37,4 +37,16 @@ export function fieldErrors(err) {
   return Object.fromEntries(list.map((e) => [e.field, e.message]));
 }
 
+// Danger Zone: a non-admin's edit or delete comes back 202 and waits for Admin.
+export const APPROVAL_MESSAGE = 'Sent to Admin for approval';
+
+export function isPendingApproval(res) {
+  return res?.status === 202;
+}
+
+// Axios config that sends the reason with a change request (shown to Admin).
+export function withReason(reason) {
+  return reason?.trim() ? { headers: { 'X-Change-Reason': encodeURIComponent(reason.trim()) } } : {};
+}
+
 export default api;

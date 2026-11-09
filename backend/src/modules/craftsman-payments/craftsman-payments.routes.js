@@ -5,6 +5,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 
 const router = Router();
@@ -90,6 +91,13 @@ router.post('/:id/cancel', requirePermission('craftsman_payments.cancel'), async
     await writeAudit(conn, req, { action: 'cancel', table: 'craftsman_payments', recordId: id, oldValues: { payment_no: payment.payment_no, amount: payment.amount }, newValues: { reason } });
   });
   res.json(await findPayment(pool, id));
+});
+
+cancelledRecordRoutes(router, {
+  table: 'craftsman_payments',
+  module: 'craftsman_payments',
+  fields: z.object({ reference_no: optionalText(50), notes: optionalText(255) }),
+  find: findPayment,
 });
 
 export default router;

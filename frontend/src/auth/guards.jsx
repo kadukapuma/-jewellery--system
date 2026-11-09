@@ -21,15 +21,25 @@ export function RequireAuth() {
   return <Outlet />;
 }
 
-// Shows a "no access" message instead of the page when the user lacks every listed permission.
-export function RequirePermission({ perm, children }) {
-  const { can } = useAuth();
-  const perms = Array.isArray(perm) ? perm : [perm];
-  if (can(...perms)) return children;
+function NoAccess() {
   return (
     <Box sx={{ textAlign: 'center', mt: 10, color: 'text.secondary' }}>
       <LockOutlinedIcon sx={{ fontSize: 48 }} />
       <Typography variant="h6">You do not have access to this page</Typography>
     </Box>
   );
+}
+
+// Admin role only (Danger Zone).
+export function RequireAdmin({ children }) {
+  const { user } = useAuth();
+  return user?.is_super_admin ? children : <NoAccess />;
+}
+
+// Shows a "no access" message instead of the page when the user lacks every listed permission.
+export function RequirePermission({ perm, children }) {
+  const { can } = useAuth();
+  const perms = Array.isArray(perm) ? perm : [perm];
+  if (can(...perms)) return children;
+  return <NoAccess />;
 }

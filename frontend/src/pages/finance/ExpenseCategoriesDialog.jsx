@@ -7,7 +7,7 @@ import EditIcon from '@mui/icons-material/EditOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
-import api, { errorMessage } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 
 // Add, rename and switch off expense categories. A category in use cannot be deleted, only switched off.
@@ -28,8 +28,9 @@ export default function ExpenseCategoriesDialog({ onClose }) {
     setError('');
     setBusy(true);
     try {
-      await fn();
-      if (message) notify(message);
+      const res = await fn();
+      if (isPendingApproval(res)) notify(APPROVAL_MESSAGE, 'info');
+      else if (message) notify(message);
       load();
       return true;
     } catch (err) {

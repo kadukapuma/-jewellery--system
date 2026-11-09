@@ -5,6 +5,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { idSchema } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 import { getSetting } from '../../utils/settings.js';
 import { ITEM_SELECT, presentItem } from '../items/items.service.js';
 
@@ -70,7 +71,7 @@ router.post('/templates', requirePermission('tag_templates.edit'), async (req, r
   res.status(201).json(await findTemplate(pool, id));
 });
 
-router.put('/templates/:id', requirePermission('tag_templates.edit'), async (req, res) => {
+router.put('/templates/:id', requirePermission('tag_templates.edit'), adminApproval('tag_templates.update', { table: 'tag_templates', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = templateSchema.parse(req.body);
   await withTransaction(async (conn) => {
@@ -80,7 +81,7 @@ router.put('/templates/:id', requirePermission('tag_templates.edit'), async (req
     await writeAudit(conn, req, { action: 'update', table: 'tag_templates', recordId: id, oldValues: before, newValues: data });
   });
   res.json(await findTemplate(pool, id));
-});
+}));
 
 // Records the print and returns what the browser needs to draw the tags.
 router.post('/print', requirePermission('tags.print'), async (req, res) => {

@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 
@@ -39,6 +39,7 @@ export default function CustomerFormDialog({ customer, initialName = '', onClose
     const body = { ...form, credit_limit: Number(form.credit_limit) || 0, opening_balance: Number(form.opening_balance) || 0 };
     try {
       const res = isNew ? await api.post('/customers', body) : await api.put(`/customers/${customer.id}`, body);
+      if (isPendingApproval(res)) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? `${form.name} added` : 'Customer saved');
       onSaved(res.data);
     } catch (err) {

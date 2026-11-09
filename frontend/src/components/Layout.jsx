@@ -171,7 +171,9 @@ const NAV_CATEGORIES = [
           { label: 'Users', path: '/users', perm: 'users.view' },
           { label: 'Roles & Permissions', path: '/roles', perm: 'roles.view' },
           { label: 'Activity Log', path: '/activity', perm: 'audit_logs.view' },
-          { label: 'Settings', path: '/settings', perm: 'settings.edit' },
+          { label: 'Settings', path: '/settings', adminOnly: true },
+          { label: 'Danger Zone', path: '/danger-zone', adminOnly: true },
+          { label: 'My Requests', path: '/my-requests' },
         ],
       },
     ],
@@ -334,6 +336,7 @@ function ModernSidebar({
 
   // Filter items by user permission
   const checkPerm = (item) => {
+    if (item.adminOnly) return !!user?.is_super_admin;
     if (!item.perm) return true;
     return can(...[].concat(item.perm));
   };

@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
-import api, { errorMessage, fieldErrors } from '../../api/client';
+import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 
 export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
@@ -37,6 +37,7 @@ export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
     const body = { ...form, opening_gold_g: Number(form.opening_gold_g) || 0, opening_cash_balance: Number(form.opening_cash_balance) || 0 };
     try {
       const res = isNew ? await api.post('/craftsmen', body) : await api.put(`/craftsmen/${craftsman.id}`, body);
+      if (isPendingApproval(res)) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
       notify(isNew ? `${form.name} added` : 'Craftsman saved');
       onSaved(res.data);
     } catch (err) {

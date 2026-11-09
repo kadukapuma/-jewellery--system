@@ -2,17 +2,20 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Card, Grid, InputAdornment, LinearProgress, Link, MenuItem, Table, TableBody, TableCell, TableContainer,
-  TableHead, TablePagination, TableRow, Typography,
+  TableHead, TablePagination, TableRow, Tooltip, Typography, IconButton,
 } from '@mui/material';
 import TextField from '../../components/TextField';
 import SearchIcon from '@mui/icons-material/Search';
-import api, { errorMessage } from '../../api/client';
+import UndoIcon from '@mui/icons-material/Undo';
+import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import { formatAmount, formatDateTime } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
-import { MOVEMENT_TYPES, movementLabel, movementLink } from '../../utils/stock';
+import { MOVEMENT_TYPES, canReverse, movementLabel, movementLink } from '../../utils/stock';
 import StockDialog from './StockDialog';
 
 // Every stock change in the shop: purchases, sales, craft jobs and stock added / taken out by hand.
@@ -25,6 +28,23 @@ export default function StockMovementsPage() {
   const [data, setData] = useState({ total: 0, sums: null, movements: [] });
   const [loading, setLoading] = useState(true);
   const [opened, setOpened] = useState(null); // item whose Stock window is open
+  const { can, user } = useAuth();
+  const [reversing, setReversing] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const reverse = async (reason) => {
+    setBusy(true);
+    try {
+      const res = await api.post(`/items/stock-movements/${reversing.id}/reverse`, null, withReason(reason));
+      notify(isPendingApproval(res) ? APPROVAL_MESSAGE : `${reversing.item_code} stock adjustment undone`, isPendingApproval(res) ? 'info' : 'success');
+      load();
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    } finally {
+      setReversing(null);
+      setBusy(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,6 +125,7 @@ export default function StockMovementsPage() {
                 <TableCell align="right">Change</TableCell>
                 <TableCell align="right">Weight</TableCell>
                 <TableCell>By</TableCell>
+                {can('items.reverse_stock') && <TableCell />}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -133,12 +154,19 @@ export default function StockMovementsPage() {
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{formatWeight(Math.abs(Number(m.weight_change_g)))}</TableCell>
                     <TableCell>{m.created_by_name}</TableCell>
+                    {can('items.reverse_stock') && (
+                      <TableCell align="right">
+                        {canReverse(m) && (
+                          <Tooltip title="Undo this adjustment"><IconButton size="small" onClick={() => setReversing(m)}><UndoIcon fontSize="small" /></IconButton></Tooltip>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
               {!loading && !data.movements.length && (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>No stock changes match these filters</TableCell>
+                  <TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>No stock changes match these filters</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -156,6 +184,16 @@ export default function StockMovementsPage() {
       </Card>
 
       {opened && <StockDialog item={opened} onClose={() => setOpened(null)} onChanged={load} />}
+      <ConfirmDialog
+        open={!!reversing}
+        title="Undo stock adjustment"
+        message={reversing ? `Undo "${movementLabel(reversing)}" (${reversing.qty_change > 0 ? '+' : ''}${reversing.qty_change}) on ${reversing.item_code}? An opposite entry is added, so the history stays complete.` : ''}
+        confirmText={user.needs_approval ? 'Request undo' : 'Undo'}
+        busy={busy}
+        reasonLabel={user.needs_approval ? 'Reason (for Admin)' : undefined}
+        onConfirm={reverse}
+        onClose={() => setReversing(null)}
+      />
     </>
   );
 }

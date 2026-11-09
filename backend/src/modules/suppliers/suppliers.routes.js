@@ -5,6 +5,8 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { optionalEmail, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { binRecord } from '../../utils/recycleBin.js';
+import { adminApproval } from '../../utils/changeGuard.js';
 
 const router = Router();
 
@@ -84,7 +86,7 @@ router.post('/', requirePermission('suppliers.create'), async (req, res) => {
   res.status(201).json(await findSupplier(pool, id));
 });
 
-router.put('/:id', requirePermission('suppliers.edit'), async (req, res) => {
+router.put('/:id', requirePermission('suppliers.edit'), adminApproval('suppliers.update', { table: 'suppliers', action: 'update' }, async (req, res) => {
   const id = parseId(req.params.id);
   const data = supplierSchema.parse(req.body);
   await withTransaction(async (conn) => {
@@ -98,19 +100,20 @@ router.put('/:id', requirePermission('suppliers.edit'), async (req, res) => {
     await writeAudit(conn, req, { action: 'update', table: 'suppliers', recordId: id, oldValues: before, newValues: data });
   });
   res.json(await findSupplier(pool, id));
-});
+}));
 
-router.delete('/:id', requirePermission('suppliers.delete'), async (req, res) => {
+router.delete('/:id', requirePermission('suppliers.delete'), adminApproval('suppliers.delete', { table: 'suppliers', action: 'delete' }, async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (conn) => {
     const supplier = await findSupplier(conn, id);
     if (supplier.purchase_count || supplier.payment_count) {
       throw new HttpError(400, `${supplier.name} has purchases or payments and cannot be deleted. Disable it instead.`);
     }
+    await binRecord(conn, req, 'suppliers', id);
     await conn.query('DELETE FROM suppliers WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'suppliers', recordId: id, oldValues: supplier });
   });
   res.status(204).end();
-});
+}));
 
 export default router;
