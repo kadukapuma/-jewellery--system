@@ -55,10 +55,10 @@ export default function CustomerStatementDialog({ customerId, onClose, onReceive
                   </TableRow>
                 )}
                 {pageRows.map((e) => (
-                  <TableRow key={`${e.type}-${e.id}`} hover onClick={e.type === 'sale' ? () => navigate(`/sales/${e.id}`) : undefined}
-                    sx={{ cursor: e.type === 'sale' ? 'pointer' : 'default' }}>
+                  <TableRow key={`${e.type}-${e.id}`} hover onClick={e.type === 'sale' ? () => navigate(`/sales/${e.id}`) : e.type === 'repair' ? () => navigate(`/repairs/${e.id}`) : undefined}
+                    sx={{ cursor: e.type === 'sale' || e.type === 'repair' ? 'pointer' : 'default' }}>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</TableCell>
-                    <TableCell>{e.ref}</TableCell>
+                    <TableCell>{e.ref}{e.type === 'repair' ? ' · Repair' : ''}</TableCell>
                     <TableCell align="right">{e.amount > 0 ? formatMoney(e.amount) : ''}</TableCell>
                     <TableCell align="right">{e.amount < 0 ? formatMoney(-e.amount) : ''}</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(e.balance)}</TableCell>

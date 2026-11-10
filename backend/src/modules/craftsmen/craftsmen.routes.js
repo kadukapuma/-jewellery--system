@@ -42,7 +42,8 @@ const adjustmentSchema = z.object({
 const CRAFTSMAN_SELECT = `
   SELECT c.*, b.gold_held_g, b.cash_due,
          (SELECT COUNT(*) FROM craft_jobs j WHERE j.craftsman_id = c.id AND j.status = 'issued') AS open_jobs,
-         (SELECT COUNT(*) FROM craft_jobs j WHERE j.craftsman_id = c.id) AS job_count,
+         (SELECT COUNT(*) FROM craft_jobs j WHERE j.craftsman_id = c.id)
+           + (SELECT COUNT(*) FROM repair_orders r WHERE r.craftsman_id = c.id) AS job_count,
          (SELECT COUNT(*) FROM craftsman_payments p WHERE p.craftsman_id = c.id) AS payment_count,
          (SELECT COUNT(*) FROM craftsman_gold_ledger l WHERE l.craftsman_id = c.id) AS ledger_count,
          (SELECT COALESCE(SUM(j.wastage_g), 0) FROM craft_jobs j WHERE j.craftsman_id = c.id AND j.status = 'completed') AS total_wastage_g,
@@ -83,10 +84,12 @@ router.get('/:id/account', requirePermission('craftsman_account.view'), async (r
   const craftsman = await findCraftsman(pool, parseId(req.params.id));
 
   const [goldRows] = await pool.query(
-    `SELECT l.id, l.txn_date, l.txn_type, l.weight_g, l.notes, l.created_at, k.name AS karat, j.job_no, j.id AS job_id
+    `SELECT l.id, l.txn_date, l.txn_type, l.weight_g, l.notes, l.created_at, k.name AS karat, j.job_no, j.id AS job_id,
+            r.repair_no, r.id AS repair_id
      FROM craftsman_gold_ledger l
      JOIN karats k ON k.id = l.karat_id
      LEFT JOIN craft_jobs j ON j.id = l.craft_job_id
+     LEFT JOIN repair_orders r ON r.id = l.repair_id
      WHERE l.craftsman_id = ? ORDER BY l.txn_date, l.id`,
     [craftsman.id],
   );
@@ -100,10 +103,13 @@ router.get('/:id/account', requirePermission('craftsman_account.view'), async (r
     `SELECT 'fee' AS type, j.id, j.job_no AS ref, j.description AS detail, j.completed_date AS date, j.craftsman_fee AS amount, j.updated_at AS created_at
      FROM craft_jobs j WHERE j.craftsman_id = ? AND j.status = 'completed' AND j.craftsman_fee > 0
      UNION ALL
+     SELECT 'repair_fee', r.id, r.repair_no, r.item_description, r.back_date, r.craftsman_fee, r.updated_at
+     FROM repair_orders r WHERE r.craftsman_id = ? AND r.status IN ('ready', 'delivered') AND r.craftsman_fee > 0
+     UNION ALL
      SELECT 'payment', p.id, p.payment_no, CONCAT(p.method, IFNULL(CONCAT(' · ', p.reference_no), '')), p.payment_date, -p.amount, p.created_at
      FROM craftsman_payments p WHERE p.craftsman_id = ? AND p.status = 'active'
      ORDER BY date, created_at`,
-    [craftsman.id, craftsman.id],
+    [craftsman.id, craftsman.id, craftsman.id],
   );
   let cash = Number(craftsman.opening_cash_balance);
   const cashEntries = cashRows.map((r) => {

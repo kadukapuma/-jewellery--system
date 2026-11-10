@@ -23,7 +23,9 @@ const money = (label) => z.coerce.number({ error: `Enter the ${label}` }).min(0,
 // rework: a saved piece goes to the craftsman (repair / resize / polish) and comes back as the same item.
 const issueSchema = z
   .object({
-    job_type: z.enum(['new', 'make_item', 'rework']).default('new'),
+    // 'rework' is no longer given out (customer items go through Customer Repairs);
+    // old rework jobs can still be received or cancelled.
+    job_type: z.enum(['new', 'make_item'], { error: 'Choose make a new piece or make a saved item' }).default('new'),
     item_id: z.coerce.number().int().positive().optional().nullable(),
     craftsman_id: z.coerce.number({ error: 'Choose a craftsman' }).int().positive('Choose a craftsman'),
     // Taken from the saved item for make_item / rework.

@@ -136,6 +136,7 @@ const NAV_CATEGORIES = [
         icon: CraftIcon,
         children: [
           { label: 'Craft Jobs', path: '/craft-jobs', perm: 'craft_jobs.view' },
+          { label: 'Customer Repairs', path: '/repairs', perm: 'repairs.view' },
         ],
       },
     ],

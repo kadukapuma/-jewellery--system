@@ -465,6 +465,47 @@ CREATE TABLE stock_movements (
   INDEX idx_sm_created (created_at)
 );
 
+-- ---------------------------------------------------------------------
+-- 15b. CUSTOMER REPAIRS - a customer's own item, never shop stock.
+--      received -> with_craftsman -> ready -> delivered (or cancelled)
+-- ---------------------------------------------------------------------
+CREATE TABLE repair_orders (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  repair_no            VARCHAR(30) NOT NULL UNIQUE,     -- REP-000001
+  customer_id          INT UNSIGNED NOT NULL,
+  received_date        DATE NOT NULL,
+  item_description     VARCHAR(255) NOT NULL,           -- Ladies ring, stone missing
+  karat_id             INT UNSIGNED NULL,               -- needed when shop gold is added
+  weight_in_g          DECIMAL(10,3) NOT NULL,          -- weighed when the customer hands it in
+  work_to_do           VARCHAR(255) NULL,
+  promised_date        DATE NULL,
+  estimated_charge     DECIMAL(14,2) NOT NULL DEFAULT 0,
+  craftsman_id         INT UNSIGNED NULL,
+  given_date           DATE NULL,
+  extra_gold_g         DECIMAL(10,3) NOT NULL DEFAULT 0,-- shop gold added to the piece
+  held_gold_g          DECIMAL(10,3) NOT NULL DEFAULT 0,-- part of it the craftsman already held
+  craftsman_fee        DECIMAL(14,2) NOT NULL DEFAULT 0,-- owed to the craftsman once it is back
+  back_date            DATE NULL,
+  weight_back_g        DECIMAL(10,3) NULL,              -- weighed when back from the craftsman
+  delivered_date       DATE NULL,
+  weight_out_g         DECIMAL(10,3) NULL,              -- weighed when the customer collects it
+  repair_charge        DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gold_charge          DECIMAL(14,2) NOT NULL DEFAULT 0,-- extra gold at the day's rate
+  total_charge         DECIMAL(14,2) NOT NULL DEFAULT 0,-- what the customer pays (set on collection)
+  status               ENUM('received','with_craftsman','ready','delivered','cancelled') NOT NULL DEFAULT 'received',
+  notes                VARCHAR(255) NULL,
+  cancel_reason        VARCHAR(255) NULL,
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_rep_customer  FOREIGN KEY (customer_id)  REFERENCES customers(id),
+  CONSTRAINT fk_rep_karat     FOREIGN KEY (karat_id)     REFERENCES karats(id),
+  CONSTRAINT fk_rep_craftsman FOREIGN KEY (craftsman_id) REFERENCES craftsmen(id),
+  CONSTRAINT fk_rep_user      FOREIGN KEY (created_by)   REFERENCES users(id),
+  INDEX idx_rep_status (status, received_date),
+  INDEX idx_rep_customer (customer_id)
+);
+
 -- =====================================================================
 -- PAYMENTS & CUSTOMER CREDIT
 --   Every rupee received from a customer is a customer_payments row
@@ -481,6 +522,7 @@ CREATE TABLE customer_payments (
   receipt_no           VARCHAR(30) NOT NULL UNIQUE,     -- RCP-000001
   customer_id          INT UNSIGNED NULL,               -- NULL only for walk-in paid-in-full bills
   sale_id              INT UNSIGNED NULL,               -- set when taken at the counter with this bill
+  repair_id            INT UNSIGNED NULL,               -- advance / payment for a customer repair
   payment_date         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   amount               DECIMAL(14,2) NOT NULL,
   method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
@@ -492,6 +534,7 @@ CREATE TABLE customer_payments (
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_cp_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
   CONSTRAINT fk_cp_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
+  CONSTRAINT fk_cp_repair   FOREIGN KEY (repair_id)   REFERENCES repair_orders(id),
   CONSTRAINT fk_cp_user     FOREIGN KEY (created_by)  REFERENCES users(id),
   CONSTRAINT chk_cp_amount  CHECK (amount > 0),
   INDEX idx_cp_customer (customer_id, payment_date)
@@ -599,6 +642,7 @@ CREATE TABLE craftsman_gold_ledger (
   id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   craftsman_id         INT UNSIGNED NOT NULL,
   craft_job_id         INT UNSIGNED NULL,
+  repair_id            INT UNSIGNED NULL,               -- shop gold added during a customer repair
   karat_id             INT UNSIGNED NOT NULL,
   txn_date             DATE NOT NULL,
   txn_type             ENUM('issue','return','wastage','extra_issue','gold_returned','adjustment','held_used') NOT NULL,
@@ -608,6 +652,7 @@ CREATE TABLE craftsman_gold_ledger (
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_cgl_craftsman FOREIGN KEY (craftsman_id) REFERENCES craftsmen(id),
   CONSTRAINT fk_cgl_job       FOREIGN KEY (craft_job_id) REFERENCES craft_jobs(id),
+  CONSTRAINT fk_cgl_repair    FOREIGN KEY (repair_id)    REFERENCES repair_orders(id),
   CONSTRAINT fk_cgl_karat     FOREIGN KEY (karat_id)     REFERENCES karats(id),
   CONSTRAINT fk_cgl_user      FOREIGN KEY (created_by)   REFERENCES users(id),
   INDEX idx_cgl_craftsman (craftsman_id, txn_date)
@@ -846,7 +891,12 @@ INSERT INTO permissions (code, module, action, description, sort_order) VALUES
   ('cash_entries.create',     'cash_entries','create',       'Opening balance, capital, drawings, transfers', 294),
   ('cash_entries.cancel',     'cash_entries','cancel',       'Cancel a cash / bank entry',               295),
   ('day_end.view',            'day_end',     'view',         'See the day end summary and closed days',  300),
-  ('day_end.close',           'day_end',     'close',        'Count the cash and close (lock) a day',    301);
+  ('day_end.close',           'day_end',     'close',        'Count the cash and close (lock) a day',    301),
+  ('repairs.view',            'repairs',     'view',         'See customer repairs',                     310),
+  ('repairs.create',          'repairs',     'create',       'Take in a customer item for repair',       311),
+  ('repairs.edit',            'repairs',     'edit',         'Give to a craftsman, receive back, change details', 312),
+  ('repairs.deliver',         'repairs',     'deliver',      'Hand the item back and take payment',      313),
+  ('repairs.cancel',          'repairs',     'cancel',       'Cancel a repair',                          314);
 
 -- Manager: everything except users, roles, settings and audit
 INSERT INTO role_permissions (role_id, permission_id)
@@ -862,7 +912,8 @@ WHERE r.name = 'Cashier'
                  'customers.view','customers.create','customers.edit',
                  'sales.view','sales.create','sales.reprint',
                  'customer_payments.view','customer_payments.create',
-                 'instalments.view','tags.print');
+                 'instalments.view','tags.print',
+                 'repairs.view','repairs.create','repairs.deliver');
 
 -- Stock Keeper: items, purchases, craftsmen and jobs
 INSERT INTO role_permissions (role_id, permission_id)
@@ -905,6 +956,7 @@ INSERT INTO document_sequences (code, prefix) VALUES
   ('CPY',  'CPY-'),   -- craftsman payments
   ('EXP',  'EXP-'),   -- shop expenses
   ('CSH',  'CSH-'),   -- cash / bank entries
+  ('REP',  'REP-'),   -- customer repairs
   ('ITEM', 'JW');     -- item barcodes: JW000001
 
 INSERT INTO expense_categories (name) VALUES
@@ -965,6 +1017,8 @@ SELECT c.id AS customer_id, c.name, c.phone, c.credit_limit,
        c.opening_balance
        + COALESCE((SELECT SUM(s.total) FROM sales s
                    WHERE s.customer_id = c.id AND s.status = 'completed'), 0)
+       + COALESCE((SELECT SUM(r.total_charge) FROM repair_orders r
+                   WHERE r.customer_id = c.id AND r.status = 'delivered'), 0)
        - COALESCE((SELECT SUM(p.amount) FROM customer_payments p
                    WHERE p.customer_id = c.id AND p.status = 'active'), 0)
          AS balance
@@ -995,6 +1049,8 @@ SELECT cm.id AS craftsman_id, cm.name, cm.phone,
        cm.opening_cash_balance
        + COALESCE((SELECT SUM(j.craftsman_fee) FROM craft_jobs j
                    WHERE j.craftsman_id = cm.id AND j.status = 'completed'), 0)
+       + COALESCE((SELECT SUM(r.craftsman_fee) FROM repair_orders r
+                   WHERE r.craftsman_id = cm.id AND r.status IN ('ready', 'delivered')), 0)
        - COALESCE((SELECT SUM(p.amount) FROM craftsman_payments p
                    WHERE p.craftsman_id = cm.id AND p.status = 'active'), 0)
          AS cash_due

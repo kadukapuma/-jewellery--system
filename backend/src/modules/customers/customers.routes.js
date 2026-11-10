@@ -36,7 +36,7 @@ const CUSTOMER_SELECT = `
          (SELECT COUNT(*) FROM customer_payments p WHERE p.customer_id = c.id) AS payment_count,
          -- Advance the next bill can use: money received but not yet put on any bill.
          (SELECT COALESCE(SUM(p.amount - COALESCE((SELECT SUM(a.amount) FROM customer_payment_allocations a WHERE a.payment_id = p.id), 0)), 0)
-          FROM customer_payments p WHERE p.customer_id = c.id AND p.status = 'active') AS advance_available
+          FROM customer_payments p WHERE p.customer_id = c.id AND p.status = 'active' AND (p.repair_id IS NULL OR EXISTS (SELECT 1 FROM repair_orders ro WHERE ro.id = p.repair_id AND ro.status = 'cancelled'))) AS advance_available
   FROM customers c JOIN v_customer_balances b ON b.customer_id = c.id`;
 
 function toCustomer(row) {
@@ -82,10 +82,13 @@ router.get('/:id/statement', requirePermission('customers.view', 'customer_payme
     `SELECT 'sale' AS type, s.id, s.invoice_no AS ref, s.sale_date AS date, s.total AS amount, s.created_at
      FROM sales s WHERE s.customer_id = ? AND s.status = 'completed'
      UNION ALL
+     SELECT 'repair', r.id, r.repair_no, r.delivered_date, r.total_charge, r.updated_at
+     FROM repair_orders r WHERE r.customer_id = ? AND r.status = 'delivered'
+     UNION ALL
      SELECT 'payment', p.id, p.receipt_no, p.payment_date, -p.amount, p.created_at
      FROM customer_payments p WHERE p.customer_id = ? AND p.status = 'active'
      ORDER BY date, created_at`,
-    [customer.id, customer.id],
+    [customer.id, customer.id, customer.id],
   );
   let running = Number(customer.opening_balance);
   const entries = rows.map((r) => {
@@ -128,10 +131,11 @@ router.delete('/:id', requirePermission('customers.delete'), adminApproval('cust
   await withTransaction(async (conn) => {
     const c = await findCustomer(conn, id);
     const [[{ n }]] = await conn.query(
-      'SELECT (SELECT COUNT(*) FROM sales WHERE customer_id = ?) + (SELECT COUNT(*) FROM craft_jobs WHERE customer_id = ?) AS n',
-      [id, id],
+      `SELECT (SELECT COUNT(*) FROM sales WHERE customer_id = ?) + (SELECT COUNT(*) FROM craft_jobs WHERE customer_id = ?)
+              + (SELECT COUNT(*) FROM repair_orders WHERE customer_id = ?) AS n`,
+      [id, id, id],
     );
-    if (n > 0 || c.payment_count) throw new HttpError(400, `${c.name} has bills or payments and cannot be deleted.`);
+    if (n > 0 || c.payment_count) throw new HttpError(400, `${c.name} has bills, repairs or payments and cannot be deleted.`);
     await binRecord(conn, req, 'customers', id);
     await conn.query('DELETE FROM customers WHERE id = ?', [id]);
     await writeAudit(conn, req, { action: 'delete', table: 'customers', recordId: id, oldValues: c });

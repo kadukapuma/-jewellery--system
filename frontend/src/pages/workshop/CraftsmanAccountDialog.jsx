@@ -96,7 +96,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
                       {GOLD_TYPES[e.txn_type]}
                       {e.notes && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{e.notes}</Typography>}
                     </TableCell>
-                    <TableCell>{e.job_no}</TableCell>
+                    <TableCell>{e.job_no || e.repair_no}</TableCell>
                     <TableCell>{e.karat}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{e.weight_g > 0 ? formatWeight(e.weight_g) : ''}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: e.txn_type === 'wastage' ? 'warning.main' : undefined }}>
@@ -133,7 +133,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</TableCell>
                     <TableCell>{e.ref}</TableCell>
                     <TableCell sx={{ color: 'text.secondary' }}>
-                      {e.type === 'payment' ? PAYMENT_METHODS[e.detail?.split(' · ')[0]] + (e.detail?.includes(' · ') ? ` · ${e.detail.split(' · ')[1]}` : '') : e.detail}
+                      {e.type === 'payment' ? PAYMENT_METHODS[e.detail?.split(' · ')[0]] + (e.detail?.includes(' · ') ? ` · ${e.detail.split(' · ')[1]}` : '') : e.type === 'repair_fee' ? `Repair · ${e.detail}` : e.detail}
                     </TableCell>
                     <TableCell align="right">{e.amount > 0 ? formatMoney(e.amount) : ''}</TableCell>
                     <TableCell align="right">{e.amount < 0 ? formatMoney(-e.amount) : ''}</TableCell>

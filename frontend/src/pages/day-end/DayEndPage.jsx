@@ -263,7 +263,7 @@ function DayView({ data }) {
             { label: 'Time', nowrap: true, render: (r) => formatTime(r.payment_date) },
             { label: 'Receipt', nowrap: true, render: (r) => r.receipt_no },
             { label: 'Customer', render: (r) => r.customer },
-            { label: 'For', render: (r) => (r.invoice_no ? `${r.invoice_no}${r.with_todays_bill ? '' : ' (old bill)'}` : 'Account / advance') },
+            { label: 'For', render: (r) => (r.repair_no ? `Repair ${r.repair_no}` : r.invoice_no ? `${r.invoice_no}${r.with_todays_bill ? '' : ' (old bill)'}` : 'Account / advance') },
             { label: 'Method', render: (r) => `${method(r.method)}${r.reference_no ? ` · ${r.reference_no}` : ''}` },
             { label: 'Amount', align: 'right', render: (r) => formatMoney(r.amount) },
           ]}
@@ -420,6 +420,22 @@ function DayView({ data }) {
                 { label: 'Weight', align: 'right', nowrap: true, render: (r) => g(r.weight_g) },
                 { label: 'Notes', render: (r) => r.notes || r.job_no || '—' },
               ]} />
+            </Grid>
+          )}
+          {s.repairs && (
+            <Grid size={{ xs: 12 }}>
+              <ReportTable
+                title={`Customer repairs · ${s.repairs.totals.received} in · ${s.repairs.totals.given} given · ${s.repairs.totals.back} back · ${s.repairs.totals.delivered} collected (${formatMoney(s.repairs.totals.charged)}) · ${s.repairs.totals.open_now} open now`}
+                rows={s.repairs.list}
+                empty="No repairs moved on this day"
+                columns={[
+                  { label: 'Repair', nowrap: true, render: (r) => r.repair_no },
+                  { label: 'Customer', render: (r) => r.customer },
+                  { label: 'Item', render: (r) => r.item_description },
+                  { label: 'Today', render: (r) => [r.received_today && 'Taken in', r.given_today && `Given to ${r.craftsman}`, r.back_today && 'Back', r.delivered_today && 'Collected'].filter(Boolean).join(' · ') },
+                  { label: 'Charge', align: 'right', render: (r) => (r.delivered_today && r.status === 'delivered' ? formatMoney(r.total_charge) : '—') },
+                ]}
+              />
             </Grid>
           )}
         </Grid>

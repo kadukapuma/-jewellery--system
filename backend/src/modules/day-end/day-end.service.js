@@ -75,11 +75,12 @@ async function salesSection(db, d) {
 async function receiptsSection(db, d) {
   const [rows] = await db.query(
     `SELECT p.id, p.receipt_no, p.payment_date, COALESCE(c.name, 'Walk-in') AS customer, p.method, p.reference_no, p.amount,
-            s.invoice_no,
+            s.invoice_no, rp.repair_no,
             (s.id IS NOT NULL AND s.sale_date >= ? AND s.sale_date < DATE_ADD(?, INTERVAL 1 DAY)) AS with_todays_bill
      FROM customer_payments p
      LEFT JOIN customers c ON c.id = p.customer_id
      LEFT JOIN sales s ON s.id = p.sale_id
+     LEFT JOIN repair_orders rp ON rp.id = p.repair_id
      WHERE p.status = 'active' AND ${ON_DAY('p.payment_date')}
      ORDER BY p.payment_date, p.id`,
     [d, d, d, d],
@@ -207,6 +208,35 @@ async function craftsmenSection(db, d) {
   };
 }
 
+// Customer repairs moved today. Their money is already in receipts (customer_payments.repair_id).
+async function repairsSection(db, d) {
+  const [rows] = await db.query(
+    `SELECT r.id, r.repair_no, c.name AS customer, r.item_description, r.status, cm.name AS craftsman,
+            r.received_date = ? AS received_today, r.given_date = ? AS given_today,
+            r.back_date = ? AS back_today, r.delivered_date = ? AS delivered_today,
+            r.weight_in_g, r.weight_out_g, r.repair_charge, r.gold_charge, r.total_charge, r.craftsman_fee
+     FROM repair_orders r JOIN customers c ON c.id = r.customer_id LEFT JOIN craftsmen cm ON cm.id = r.craftsman_id
+     WHERE r.received_date = ? OR r.given_date = ? OR r.back_date = ? OR r.delivered_date = ?
+     ORDER BY r.id`,
+    [d, d, d, d, d, d, d, d],
+  );
+  const list = num3(num2(rows, ['repair_charge', 'gold_charge', 'total_charge', 'craftsman_fee']), ['weight_in_g', 'weight_out_g'])
+    .map((r) => ({ ...r, received_today: !!r.received_today, given_today: !!r.given_today, back_today: !!r.back_today, delivered_today: !!r.delivered_today }));
+  const delivered = list.filter((r) => r.delivered_today && r.status === 'delivered');
+  const [[open]] = await db.query("SELECT COUNT(*) AS n FROM repair_orders WHERE status IN ('received', 'with_craftsman', 'ready')");
+  return {
+    totals: {
+      received: list.filter((r) => r.received_today).length,
+      given: list.filter((r) => r.given_today).length,
+      back: list.filter((r) => r.back_today).length,
+      delivered: delivered.length,
+      charged: round2(sum(delivered, 'total_charge')),
+      open_now: Number(open.n),
+    },
+    list,
+  };
+}
+
 async function stockSection(db, d, showCost) {
   const [byType] = await db.query(
     `SELECT sm.movement_type AS label, COUNT(*) AS entries,
@@ -303,6 +333,20 @@ async function profitSection(db, d, expensesTotal) {
     g.profit = round2(g.revenue - g.cost);
     byCategory.set(l.category, g);
   }
+  // Repairs handed over today: the charge is revenue; the craftsman fee and the shop gold
+  // (priced at the same rate it was charged) are the cost.
+  const [[rep]] = await db.query(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(total_charge), 0) AS revenue, COALESCE(SUM(craftsman_fee + gold_charge), 0) AS cost
+     FROM repair_orders WHERE status = 'delivered' AND delivered_date = ?`,
+    [d],
+  );
+  if (Number(rep.n) > 0) {
+    const r = round2(rep.revenue);
+    const c = round2(rep.cost);
+    revenue += r;
+    cost += c;
+    byCategory.set('Repairs', { label: 'Repairs', pieces: Number(rep.n), revenue: r, cost: c, profit: round2(r - c) });
+  }
   revenue = round2(revenue);
   cost = round2(cost);
   const gross = round2(revenue - cost);
@@ -323,6 +367,7 @@ export async function buildDaySummary(db, date, { showCost = false } = {}) {
   const purchases = await purchasesSection(db, date);
   const expenses = await expensesSection(db, date);
   const craftsmen = await craftsmenSection(db, date);
+  const repairs = await repairsSection(db, date);
   const stock = await stockSection(db, date, showCost);
   const cash = await cashSection(db, date);
   const profit = showCost ? await profitSection(db, date, expenses.totals.total) : null;
@@ -337,6 +382,6 @@ export async function buildDaySummary(db, date, { showCost = false } = {}) {
       expected_cash: cash.accounts.cash.closing,
       net_profit: profit ? profit.net_profit : null,
     },
-    sales, receipts, purchases, expenses, craftsmen, stock, cash, profit,
+    sales, receipts, purchases, expenses, craftsmen, repairs, stock, cash, profit,
   };
 }

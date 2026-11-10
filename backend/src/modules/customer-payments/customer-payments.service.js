@@ -68,7 +68,7 @@ export async function applyCustomerAdvances(conn, customerId) {
   const [payments] = await conn.query(
     `SELECT p.id, p.amount - COALESCE((SELECT SUM(a.amount) FROM customer_payment_allocations a WHERE a.payment_id = p.id), 0) AS unallocated
      FROM customer_payments p
-     WHERE p.customer_id = ? AND p.status = 'active'
+     WHERE p.customer_id = ? AND p.status = 'active' AND (p.repair_id IS NULL OR EXISTS (SELECT 1 FROM repair_orders ro WHERE ro.id = p.repair_id AND ro.status = 'cancelled')) -- money for an open / collected repair stays on it
      HAVING unallocated > 0
      ORDER BY p.payment_date, p.id`,
     [customerId],

@@ -20,6 +20,8 @@ import PurchaseDetailPage from './pages/purchasing/PurchaseDetailPage';
 import SupplierPaymentsPage from './pages/purchasing/SupplierPaymentsPage';
 import CraftJobsPage from './pages/workshop/CraftJobsPage';
 import CraftsmenPage from './pages/workshop/CraftsmenPage';
+import RepairsPage from './pages/repairs/RepairsPage';
+import RepairSlipPage from './pages/repairs/RepairSlipPage';
 import PosPage from './pages/sales/PosPage';
 import SalesPage from './pages/sales/SalesPage';
 import InvoicePage from './pages/sales/InvoicePage';
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="purchases/:id" element={<RequirePermission perm="purchases.view"><PurchaseDetailPage /></RequirePermission>} />
           <Route path="supplier-payments" element={<RequirePermission perm="supplier_payments.view"><SupplierPaymentsPage /></RequirePermission>} />
           <Route path="craft-jobs" element={<RequirePermission perm="craft_jobs.view"><CraftJobsPage /></RequirePermission>} />
+          <Route path="repairs" element={<RequirePermission perm="repairs.view"><RepairsPage /></RequirePermission>} />
+          <Route path="repairs/:id" element={<RequirePermission perm="repairs.view"><RepairSlipPage /></RequirePermission>} />
           <Route path="craftsmen" element={<RequirePermission perm="craftsmen.view"><CraftsmenPage /></RequirePermission>} />
           <Route path="pos" element={<RequirePermission perm="sales.create"><PosPage /></RequirePermission>} />
           <Route path="sales" element={<RequirePermission perm="sales.view"><SalesPage /></RequirePermission>} />
