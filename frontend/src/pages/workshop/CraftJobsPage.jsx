@@ -49,6 +49,7 @@ function CancelJobDialog({ job, onClose, onDone }) {
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Use this when {job.craftsman_name} gives back all {formatWeight(job.issued_weight_g)} of gold.
+          {Number(job.held_gold_g) > 0 ? ` ${formatWeight(job.held_gold_g)} of it was gold he already had; that stays on his balance.` : ''}
           {job.source_item_code ? ` ${job.source_item_code} goes back into stock.` : ''}
           {job.job_type === 'rework' ? ` ${job.finished_item_code} goes back into stock as it was.` : ''}
           {job.job_type === 'make_item' ? ` ${job.finished_item_code} stays saved, ready for another job.` : ''}
@@ -171,6 +172,16 @@ export default function CraftJobsPage() {
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatWeight(j.issued_weight_g)}</Typography>
                       <Typography variant="caption" color="text.secondary">{j.karat_name}</Typography>
+                      {Number(j.target_weight_g) > 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          wanted {formatWeight(j.target_weight_g)}
+                        </Typography>
+                      )}
+                      {Number(j.held_gold_g) > 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          incl. {formatWeight(j.held_gold_g)} he had
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {j.returned_weight_g !== null ? formatWeight(j.returned_weight_g) : '—'}

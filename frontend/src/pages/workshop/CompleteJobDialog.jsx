@@ -54,6 +54,9 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
 
   const returned = Number(form.returned_weight_g) || 0;
   const wastage = returned > 0 ? Math.round((issued - returned) * 1000) / 1000 : null;
+  const target = Number(job.target_weight_g) || 0;
+  const held = Number(job.held_gold_g) || 0;
+  const diff = target > 0 && returned > 0 ? Math.round((returned - target) * 1000) / 1000 : 0;
   const wastagePct = wastage !== null ? Math.round((wastage / issued) * 10000) / 100 : null;
   // A reworked piece keeps the wastage and making it already had; this job's are added on top.
   const totalWastage = rework ? Math.round((Number(job.item_wastage_g) + (wastage ?? 0)) * 1000) / 1000 : wastage;
@@ -111,7 +114,7 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
                 {field('returned_weight_g', 'Finished weight', {
                   required: true, autoFocus: true, type: 'number',
                   slotProps: { htmlInput: { min: 0, step: '0.001' }, input: { endAdornment: <InputAdornment position="end">g</InputAdornment> } },
-                  helperText: 'Weigh the piece',
+                  helperText: Number(job.target_weight_g) > 0 ? `Weigh the piece · wanted ${formatWeight(job.target_weight_g)}` : 'Weigh the piece',
                 })}
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>{field('completed_date', 'Date received', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>
@@ -143,13 +146,18 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
           <Grid size={{ xs: 12, md: 5 }}>
             <Box sx={{ bgcolor: gold[50], border: `1px solid ${gold[200]}`, borderRadius: '20px', p: 2.5 }}>
               {[
-                ['Gold given', formatWeight(issued)],
+                ['Gold given', `${formatWeight(issued)}${held > 0 ? ` (${formatWeight(held)} his own)` : ''}`],
+                ...(target > 0 ? [['Weight wanted', formatWeight(target)]] : []),
                 ['Finished piece', returned > 0 ? formatWeight(returned) : '—'],
+                ...(target > 0 && returned > 0 ? [['Difference', diff === 0 ? 'Exact' : `${diff > 0 ? '+' : '−'}${formatWeight(Math.abs(diff))} ${diff > 0 ? 'heavier' : 'lighter'}`]] : []),
                 ['Wastage', wastage !== null ? `${formatWeight(wastage)} (${wastagePct}%)` : '—'],
               ].map(([label, value]) => (
                 <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.4 }}>
                   <Typography variant="body2" color="text.secondary">{label}</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600, color: label === 'Wastage' && wastage < 0 ? 'error.main' : undefined }}>{value}</Typography>
+                  <Typography variant="body2" sx={{
+                    fontWeight: 600,
+                    color: (label === 'Wastage' && wastage < 0) || (label === 'Difference' && diff !== 0) ? 'error.main' : label === 'Difference' ? 'success.main' : undefined,
+                  }}>{value}</Typography>
                 </Box>
               ))}
               {price && (

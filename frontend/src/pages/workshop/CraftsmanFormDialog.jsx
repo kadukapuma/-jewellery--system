@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, Switch, TextField,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, MenuItem, Switch, TextField,
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
@@ -15,12 +15,21 @@ export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
     phone: craftsman?.phone || '',
     address: craftsman?.address || '',
     opening_gold_g: craftsman?.opening_gold_g ?? 0,
+    opening_gold_karat_id: craftsman?.opening_gold_karat_id ?? '',
     opening_cash_balance: craftsman?.opening_cash_balance ?? 0,
     is_active: craftsman?.is_active ?? true,
   });
+  const [karats, setKarats] = useState([]);
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get('/karats').then((res) => setKarats(res.data)).catch(() => {});
+  }, []);
+  // The craftsman's own karat stays listed even if it was disabled since.
+  const karatOptions = karats.filter((k) => k.is_active || k.id === form.opening_gold_karat_id);
+  const hasOpeningGold = Number(form.opening_gold_g) !== 0;
 
   const set = (field) => (e) => {
     setForm({ ...form, [field]: e.target.value });
@@ -29,12 +38,20 @@ export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
 
   const save = async () => {
     setError('');
-    if (!form.name.trim()) {
-      setErrors({ name: 'Name is required' });
+    const e = {};
+    if (!form.name.trim()) e.name = 'Name is required';
+    if (hasOpeningGold && !form.opening_gold_karat_id) e.opening_gold_karat_id = 'Choose the karat of this gold';
+    if (Object.keys(e).length) {
+      setErrors(e);
       return;
     }
     setBusy(true);
-    const body = { ...form, opening_gold_g: Number(form.opening_gold_g) || 0, opening_cash_balance: Number(form.opening_cash_balance) || 0 };
+    const body = {
+      ...form,
+      opening_gold_g: Number(form.opening_gold_g) || 0,
+      opening_gold_karat_id: hasOpeningGold ? form.opening_gold_karat_id : null,
+      opening_cash_balance: Number(form.opening_cash_balance) || 0,
+    };
     try {
       const res = isNew ? await api.post('/craftsmen', body) : await api.put(`/craftsmen/${craftsman.id}`, body);
       if (isPendingApproval(res)) { notify(APPROVAL_MESSAGE, 'info'); onClose(); return; }
@@ -68,6 +85,12 @@ export default function CraftsmanFormDialog({ craftsman, onClose, onSaved }) {
               type: 'number',
               slotProps: { htmlInput: { step: '0.001' }, input: { endAdornment: <InputAdornment position="end">g</InputAdornment> } },
               helperText: 'Before using this system',
+            })}
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            {field('opening_gold_karat_id', 'Karat of that gold', {
+              select: true, required: hasOpeningGold, disabled: !hasOpeningGold,
+              children: karatOptions.map((k) => <MenuItem key={k.id} value={k.id}>{k.name}</MenuItem>),
             })}
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>

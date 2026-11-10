@@ -8,6 +8,7 @@ import api, { errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { formatDate, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
+import { heldByKaratText } from './heldGold';
 import { PAYMENT_METHODS } from '../../utils/payments';
 import GoldAdjustmentDialog from './GoldAdjustmentDialog';
 import CraftsmanPaymentDialog from './CraftsmanPaymentDialog';
@@ -20,6 +21,7 @@ const GOLD_TYPES = {
   extra_issue: 'Extra gold given',
   gold_returned: 'Gold given back',
   adjustment: 'Correction',
+  held_used: 'Held gold used for job',
 };
 
 export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged }) {
@@ -54,7 +56,7 @@ export default function CraftsmanAccountDialog({ craftsmanId, onClose, onChanged
         {c?.name ?? 'Craftsman'} – account
         {c && (
           <Typography variant="body2" color="text.secondary">
-            Holds {formatWeight(c.gold_held_g)} of gold · {c.cash_due >= 0 ? `fees owed ${formatMoney(c.cash_due)}` : `advance ${formatMoney(-c.cash_due)}`}
+            Holds {c.gold_by_karat?.length ? heldByKaratText(c.gold_by_karat) : formatWeight(c.gold_held_g)} of gold ·{c.cash_due >= 0 ? `fees owed ${formatMoney(c.cash_due)}` : `advance ${formatMoney(-c.cash_due)}`}
             {c.wastage_percent !== null && ` · average wastage ${c.wastage_percent}%`}
           </Typography>
         )}

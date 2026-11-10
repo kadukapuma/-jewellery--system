@@ -8,6 +8,7 @@ import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { formatWeight } from '../../utils/pricing';
 import { todayYmd } from '../../utils/payments';
+import { heldByKaratText, heldOfKarat } from './heldGold';
 
 const TYPES = {
   gold_returned: 'Gold given back to the shop',
@@ -34,7 +35,9 @@ export default function GoldAdjustmentDialog({ craftsman, onClose, onSaved }) {
 
   const w = Number(form.weight_g) || 0;
   const signed = form.txn_type === 'extra_issue' ? Math.abs(w) : form.txn_type === 'gold_returned' ? -Math.abs(w) : w;
-  const after = Math.round((craftsman.gold_held_g + signed) * 1000) / 1000;
+  // Held gold is kept per karat, so "after" is for the karat chosen.
+  const after = Math.round((heldOfKarat(craftsman, form.karat_id) + signed) * 1000) / 1000;
+  const karatName = karats.find((k) => k.id === form.karat_id)?.name;
 
   const save = async () => {
     setError('');
@@ -60,7 +63,9 @@ export default function GoldAdjustmentDialog({ craftsman, onClose, onSaved }) {
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>
         Gold movement – {craftsman.name}
-        <Typography variant="body2" color="text.secondary">Holds {formatWeight(craftsman.gold_held_g)} now</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Holds {craftsman.gold_by_karat?.length ? heldByKaratText(craftsman.gold_by_karat) : formatWeight(craftsman.gold_held_g)} now
+        </Typography>
       </DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -77,7 +82,7 @@ export default function GoldAdjustmentDialog({ craftsman, onClose, onSaved }) {
           </Grid>
           <Grid size={{ xs: 6 }}>
             <TextField label="Weight" type="number" value={form.weight_g} onChange={set('weight_g')} error={!!errors.weight_g}
-              helperText={errors.weight_g || `After: ${formatWeight(after)}`}
+              helperText={errors.weight_g || (karatName ? `${karatName} after: ${formatWeight(after)}` : 'Choose the karat')}
               slotProps={{ htmlInput: { step: '0.001' }, input: { endAdornment: <InputAdornment position="end">g</InputAdornment> } }} />
           </Grid>
           <Grid size={{ xs: 12 }}>

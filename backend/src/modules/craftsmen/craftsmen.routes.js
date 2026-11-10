@@ -8,6 +8,7 @@ import { dateSchema, gramsSchema, optionalText } from '../../utils/validation.js
 import { writeAudit } from '../../utils/audit.js';
 import { binRecord } from '../../utils/recycleBin.js';
 import { adminApproval } from '../../utils/changeGuard.js';
+import { goldByKarat } from './craftsmen.gold.js';
 
 const router = Router();
 
@@ -19,8 +20,13 @@ const craftsmanSchema = z.object({
   phone: optionalText(30),
   address: optionalText(255),
   opening_gold_g: gramsSchema('opening gold').refine((v) => v >= -100000, 'Too small').default(0),
+  opening_gold_karat_id: z.coerce.number().int().positive().optional().nullable(),
   opening_cash_balance: z.coerce.number().min(-1e12).max(1e12).default(0),
   is_active: z.boolean(),
+}).superRefine((data, ctx) => {
+  if (data.opening_gold_g !== 0 && !data.opening_gold_karat_id) {
+    ctx.addIssue({ code: 'custom', path: ['opening_gold_karat_id'], message: 'Choose the karat of this gold' });
+  }
 });
 
 // Signed: extra_issue adds gold to the craftsman, gold_returned takes it back, adjustment is either way.
@@ -58,12 +64,14 @@ function toCraftsman(row) {
 async function findCraftsman(db, id) {
   const [rows] = await db.query(`${CRAFTSMAN_SELECT} WHERE c.id = ?`, [id]);
   if (!rows.length) throw new HttpError(404, 'Craftsman not found');
-  return toCraftsman(rows[0]);
+  const byKarat = await goldByKarat(db, [id]);
+  return { ...toCraftsman(rows[0]), gold_by_karat: byKarat.get(id) || [] };
 }
 
 router.get('/', requirePermission('craftsmen.view', 'craft_jobs.view', 'craftsman_account.view'), async (req, res) => {
   const [rows] = await pool.query(`${CRAFTSMAN_SELECT} ORDER BY c.name`);
-  res.json(rows.map(toCraftsman));
+  const byKarat = await goldByKarat(pool);
+  res.json(rows.map((r) => ({ ...toCraftsman(r), gold_by_karat: byKarat.get(r.id) || [] })));
 });
 
 router.get('/:id', requirePermission('craftsmen.view', 'craft_jobs.view', 'craftsman_account.view'), async (req, res) => {
@@ -129,8 +137,8 @@ router.post('/', requirePermission('craftsmen.create'), async (req, res) => {
   const data = craftsmanSchema.parse(req.body);
   const id = await withTransaction(async (conn) => {
     const [result] = await conn.query(
-      `INSERT INTO craftsmen (name, phone, address, opening_gold_g, opening_cash_balance, is_active) VALUES (?, ?, ?, ?, ?, ?)`,
-      [data.name, data.phone, data.address, data.opening_gold_g, data.opening_cash_balance, data.is_active ? 1 : 0],
+      `INSERT INTO craftsmen (name, phone, address, opening_gold_g, opening_gold_karat_id, opening_cash_balance, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [data.name, data.phone, data.address, data.opening_gold_g, data.opening_gold_karat_id ?? null, data.opening_cash_balance, data.is_active ? 1 : 0],
     );
     await writeAudit(conn, req, { action: 'create', table: 'craftsmen', recordId: result.insertId, newValues: data });
     return result.insertId;
@@ -145,8 +153,8 @@ router.put('/:id', requirePermission('craftsmen.edit'), adminApproval('craftsmen
     const [[before]] = await conn.query('SELECT * FROM craftsmen WHERE id = ?', [id]);
     if (!before) throw new HttpError(404, 'Craftsman not found');
     await conn.query(
-      'UPDATE craftsmen SET name = ?, phone = ?, address = ?, opening_gold_g = ?, opening_cash_balance = ?, is_active = ? WHERE id = ?',
-      [data.name, data.phone, data.address, data.opening_gold_g, data.opening_cash_balance, data.is_active ? 1 : 0, id],
+      'UPDATE craftsmen SET name = ?, phone = ?, address = ?, opening_gold_g = ?, opening_gold_karat_id = ?, opening_cash_balance = ?, is_active = ? WHERE id = ?',
+      [data.name, data.phone, data.address, data.opening_gold_g, data.opening_gold_karat_id ?? null, data.opening_cash_balance, data.is_active ? 1 : 0, id],
     );
     await writeAudit(conn, req, { action: 'update', table: 'craftsmen', recordId: id, oldValues: before, newValues: data });
   });

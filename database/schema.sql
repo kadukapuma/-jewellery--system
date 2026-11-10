@@ -248,10 +248,12 @@ CREATE TABLE craftsmen (
   phone          VARCHAR(30)  NULL,
   address        VARCHAR(255) NULL,
   opening_gold_g        DECIMAL(10,3) NOT NULL DEFAULT 0, -- gold they held when the system started
+  opening_gold_karat_id INT UNSIGNED NULL,                -- karat of that gold (held gold is kept per karat)
   opening_cash_balance  DECIMAL(14,2) NOT NULL DEFAULT 0, -- fees we owed them (+) or advance given (-)
   is_active      TINYINT(1) NOT NULL DEFAULT 1,
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_craftsman_opening_karat FOREIGN KEY (opening_gold_karat_id) REFERENCES karats(id)
 );
 
 -- ---------------------------------------------------------------------
@@ -360,7 +362,9 @@ CREATE TABLE craft_jobs (
   customer_id          INT UNSIGNED NULL,               -- set for customer orders
   source_item_id       INT UNSIGNED NULL,               -- biscuit/old gold taken from stock
   description          VARCHAR(255) NULL,
+  target_weight_g      DECIMAL(10,3) NULL,              -- exact weight wanted for the finished piece
   issued_weight_g      DECIMAL(10,3) NOT NULL,          -- 8.000 (rework: piece weight + extra gold)
+  held_gold_g          DECIMAL(10,3) NOT NULL DEFAULT 0,-- part of the gold the craftsman already held
   item_weight_g        DECIMAL(10,3) NULL,              -- rework: weight of the saved piece when given
   issue_date           DATE NOT NULL,
   returned_weight_g    DECIMAL(10,3) NULL,              -- 7.000 (on completion)
@@ -597,7 +601,7 @@ CREATE TABLE craftsman_gold_ledger (
   craft_job_id         INT UNSIGNED NULL,
   karat_id             INT UNSIGNED NOT NULL,
   txn_date             DATE NOT NULL,
-  txn_type             ENUM('issue','return','wastage','extra_issue','gold_returned','adjustment') NOT NULL,
+  txn_type             ENUM('issue','return','wastage','extra_issue','gold_returned','adjustment','held_used') NOT NULL,
   weight_g             DECIMAL(10,3) NOT NULL,          -- signed
   notes                VARCHAR(255) NULL,
   created_by           INT UNSIGNED NOT NULL,

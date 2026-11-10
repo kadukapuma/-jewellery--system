@@ -15,6 +15,7 @@ import StatCard from '../../components/StatCard';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { formatAmount, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
+import { heldByKaratText } from './heldGold';
 import CraftsmanFormDialog from './CraftsmanFormDialog';
 import CraftsmanAccountDialog from './CraftsmanAccountDialog';
 import TablePager, { usePagedRows } from '../../components/TablePager';
@@ -107,7 +108,14 @@ export default function CraftsmenPage() {
                     <Typography variant="caption" color="text.secondary">{c.phone}</Typography>
                   </TableCell>
                   <TableCell align="right">{c.open_jobs}</TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontWeight: c.gold_held_g ? 600 : 400 }}>{formatWeight(c.gold_held_g)}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontWeight: c.gold_held_g ? 600 : 400 }}>
+                    {formatWeight(c.gold_held_g)}
+                    {c.gold_by_karat?.length > 0 && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400 }}>
+                        {heldByKaratText(c.gold_by_karat)}
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell align="right">{c.wastage_percent === null ? '—' : `${c.wastage_percent}%`}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {c.cash_due < 0 ? `${formatMoney(-c.cash_due)} adv.` : formatMoney(c.cash_due)}

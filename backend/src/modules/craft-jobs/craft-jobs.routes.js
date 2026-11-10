@@ -11,6 +11,7 @@ import { snapshot } from '../../utils/recycleBin.js';
 import { adminApproval } from '../../utils/changeGuard.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { getCurrentPrice } from '../gold-prices/gold-prices.service.js';
+import { goldHeldOfKarat } from '../craftsmen/craftsmen.gold.js';
 
 const router = Router();
 
@@ -33,6 +34,10 @@ const issueSchema = z
     // rework: worked out from the piece's weight + extra gold.
     issued_weight_g: gramsSchema('gold weight').refine((v) => v > 0, 'Weight must be above 0').optional().nullable(),
     extra_weight_g: gramsSchema('extra gold').refine((v) => v >= 0, 'Cannot be negative').default(0),
+    // The exact weight wanted for the finished piece (compared with what comes back).
+    // false: give all new gold and leave what he already holds untouched.
+    use_held_gold: z.boolean().default(true),
+    target_weight_g: gramsSchema('piece weight wanted').refine((v) => v > 0, 'Weight must be above 0').optional().nullable(),
     making_charge: money('making charge'),
     craftsman_fee: money('craftsman fee'),
     source_item_id: z.coerce.number().int().positive().optional().nullable(),
@@ -164,7 +169,8 @@ router.post('/', requirePermission('craft_jobs.create'), async (req, res) => {
   const data = issueSchema.parse(req.body);
   const id = await withTransaction(async (conn) => {
     await assertDayOpen(conn, data.issue_date);
-    const [[craftsman]] = await conn.query('SELECT is_active FROM craftsmen WHERE id = ?', [data.craftsman_id]);
+    // Locked so two jobs cannot use the same held gold at once.
+    const [[craftsman]] = await conn.query('SELECT is_active FROM craftsmen WHERE id = ? FOR UPDATE', [data.craftsman_id]);
     if (!craftsman?.is_active) throw new HttpError(400, 'Choose an active craftsman');
 
     let saved = null;
@@ -181,23 +187,36 @@ router.post('/', requirePermission('craft_jobs.create'), async (req, res) => {
     const [[karat]] = await conn.query('SELECT is_active FROM karats WHERE id = ?', [data.karat_id]);
     if (!karat?.is_active) throw new HttpError(400, 'Choose an active karat');
 
+    // Gold he already holds of the job's karat is always used first; only the rest is new gold.
+    // For a rework only the extra gold can come from it; the piece is the shop's.
+    const loose = data.job_type === 'rework' ? data.extra_weight_g : data.issued_weight_g;
+    const has = data.use_held_gold ? Math.max(0, await goldHeldOfKarat(conn, data.craftsman_id, data.karat_id)) : 0;
+    const held = round3(Math.min(has, loose));
+
+    if (data.target_weight_g && data.target_weight_g > data.issued_weight_g) {
+      throw new HttpError(400, `The piece cannot weigh more than the gold for the job (${Number(data.issued_weight_g).toFixed(3)} g)`);
+    }
+
     if (data.source_item_id) {
       if (data.source_item_id === saved?.id) throw new HttpError(400, 'The gold cannot come from the item being made');
       const [[src]] = await conn.query('SELECT * FROM items WHERE id = ? FOR UPDATE', [data.source_item_id]);
       if (!src || src.status !== 'in_stock' || src.stock_qty < 1) throw new HttpError(400, 'The gold item is not in stock');
       if (src.karat_id !== data.karat_id) throw new HttpError(400, 'The gold item is a different karat from the job');
-      if (data.issued_weight_g > Number(src.net_weight_g)) {
-        throw new HttpError(400, `Cannot give more than the item weighs (${Number(src.net_weight_g).toFixed(3)} g)`);
+      // Only the new gold comes from the item; the rest is gold he already has.
+      const fromItem = round3(data.issued_weight_g - held);
+      if (fromItem <= 0) throw new HttpError(400, 'He already has enough gold for this job; no gold from stock is needed');
+      if (fromItem > Number(src.net_weight_g)) {
+        throw new HttpError(400, `Cannot take more than the item weighs (${Number(src.net_weight_g).toFixed(3)} g)`);
       }
     }
 
     const jobNo = await nextDocumentNumber(conn, 'JOB');
     const [result] = await conn.query(
-      `INSERT INTO craft_jobs (job_no, job_type, craftsman_id, category_id, karat_id, source_item_id, item_id, description,
-                               issued_weight_g, item_weight_g, issue_date, making_charge, craftsman_fee, status, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`,
+      `INSERT INTO craft_jobs (job_no, job_type, craftsman_id, category_id, karat_id, source_item_id, item_id, description, target_weight_g,
+                               issued_weight_g, held_gold_g, item_weight_g, issue_date, making_charge, craftsman_fee, status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`,
       [jobNo, data.job_type, data.craftsman_id, data.category_id, data.karat_id, data.source_item_id ?? null, saved?.id ?? null,
-        data.description, data.issued_weight_g, data.job_type === 'rework' ? Number(saved.net_weight_g) : null,
+        data.description, data.target_weight_g ?? null, data.issued_weight_g, held, data.job_type === 'rework' ? Number(saved.net_weight_g) : null,
         data.issue_date, data.making_charge, data.craftsman_fee, req.user.id],
     );
     const job = { id: result.insertId, craftsman_id: data.craftsman_id, karat_id: data.karat_id };
@@ -215,9 +234,11 @@ router.post('/', requirePermission('craft_jobs.create'), async (req, res) => {
         "UPDATE items SET stock_qty = stock_qty - 1, status = IF(stock_qty = 0, 'with_craftsman', status) WHERE id = ?",
         [data.source_item_id],
       );
-      await moveStock(conn, req, data.source_item_id, 'craft_issue', -1, -data.issued_weight_g, job.id);
+      await moveStock(conn, req, data.source_item_id, 'craft_issue', -1, -round3(data.issued_weight_g - held), job.id);
     }
     await ledger(conn, req, job, 'issue', data.issued_weight_g, data.issue_date);
+    // Gold he already had goes into this job, so it comes off his free balance.
+    await ledger(conn, req, job, 'held_used', -held, data.issue_date, 'Gold he already had');
     await writeAudit(conn, req, { action: 'issue', table: 'craft_jobs', recordId: job.id, newValues: { ...data, job_no: jobNo } });
     return job.id;
   });
@@ -343,9 +364,12 @@ router.post('/:id/cancel', requirePermission('craft_jobs.delete'), async (req, r
     const [[{ today }]] = await conn.query('SELECT CURDATE() AS today');
     await assertDayOpen(conn, today);
     await ledger(conn, req, job, 'gold_returned', -Number(job.issued_weight_g), today, reason ? `Job cancelled: ${reason}` : 'Job cancelled');
+    // Gold he already had stays with him, back on his balance.
+    const held = Number(job.held_gold_g);
+    await ledger(conn, req, job, 'held_used', held, today, 'Job cancelled: held gold back on balance');
     if (job.source_item_id) {
       await conn.query("UPDATE items SET stock_qty = stock_qty + 1, status = 'in_stock' WHERE id = ?", [job.source_item_id]);
-      await moveStock(conn, req, job.source_item_id, 'adjustment', 1, Number(job.issued_weight_g), id);
+      await moveStock(conn, req, job.source_item_id, 'adjustment', 1, round3(Number(job.issued_weight_g) - held), id);
     }
     if (job.job_type === 'rework') {
       // The piece comes back as it was.

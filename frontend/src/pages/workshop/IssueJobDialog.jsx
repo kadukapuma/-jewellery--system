@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, Grid, InputAdornment, MenuItem, ToggleButton,
-  ToggleButtonGroup, Typography,
+  Alert, Box, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, MenuItem, Switch,
+  ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
@@ -58,8 +58,9 @@ export default function IssueJobDialog({ onClose, onSaved }) {
   const [sourceItem, setSourceItem] = useState(null);
   const [form, setForm] = useState({
     craftsman_id: '', category_id: '', karat_id: '', description: '', issue_date: todayYmd(),
-    issued_weight_g: '', extra_weight_g: '', making_charge: '', craftsman_fee: '',
+    target_weight_g: '', issued_weight_g: '', extra_weight_g: '', making_charge: '', craftsman_fee: '',
   });
+  const [useHeld, setUseHeld] = useState(true); // use the gold he already holds for this job
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -126,7 +127,8 @@ export default function IssueJobDialog({ onClose, onSaved }) {
       return;
     }
     setSourceItem(item);
-    setForm((f) => ({ ...f, karat_id: item.karat_id, issued_weight_g: item.net_weight_g }));
+    // Keeps the gold for the job if it is already entered.
+    setForm((f) => ({ ...f, karat_id: item.karat_id, issued_weight_g: f.issued_weight_g || item.net_weight_g }));
     setErrors((e) => ({ ...e, source: undefined }));
   }, 'source');
 
@@ -134,6 +136,20 @@ export default function IssueJobDialog({ onClose, onSaved }) {
   const usesSaved = jobType !== 'new';
   const extra = Number(form.extra_weight_g) || 0;
   const reworkTotal = rework && savedItem ? round3(Number(savedItem.net_weight_g) + extra) : null;
+  // Gold the chosen craftsman still holds from before; part of it can go into this job.
+  const craftsman = craftsmen.find((c) => c.id === form.craftsman_id);
+  // Held gold is kept per karat: only gold of the job's karat can go into it.
+  const heldList = (craftsman?.gold_by_karat || []).filter((g) => g.gold_g > 0);
+  const karatName = karats.find((k) => k.id === form.karat_id)?.name || savedItem?.karat_name || '';
+  const holds = form.karat_id ? Math.max(0, heldList.find((g) => g.karat_id === form.karat_id)?.gold_g ?? 0) : 0;
+  const heldOther = heldList.filter((g) => g.karat_id !== form.karat_id);
+  const looseGiven = rework ? extra : Number(form.issued_weight_g) || 0; // what held gold can stand in for
+  // His gold is used first (unless switched off); only the rest is new gold from the shop.
+  const heldUsed = useHeld ? round3(Math.min(holds, looseGiven)) : 0;
+  const newGold = round3(looseGiven - heldUsed);
+  const enoughHeld = useHeld && holds > 0 && looseGiven > 0 && newGold <= 0;
+  const target = Number(form.target_weight_g) || 0;
+  const totalGiven = rework ? reworkTotal ?? 0 : looseGiven;
 
   const save = async () => {
     setError('');
@@ -144,8 +160,10 @@ export default function IssueJobDialog({ onClose, onSaved }) {
     if (!usesSaved && !form.karat_id) e.karat_id = 'Choose a karat';
     if (!rework && !(Number(form.issued_weight_g) > 0)) e.issued_weight_g = 'Enter the gold weight';
     if (rework && extra < 0) e.extra_weight_g = 'Cannot be negative';
-    if (!rework && source === 'stock' && !sourceItem) e.source = 'Find the gold item by barcode';
-    if (sourceItem && Number(form.issued_weight_g) > Number(sourceItem.net_weight_g)) e.issued_weight_g = `At most ${formatWeight(sourceItem.net_weight_g)}`;
+    if (!rework && source === 'stock' && !sourceItem && !enoughHeld) e.source = 'Find the gold item by barcode';
+    if (form.target_weight_g !== '' && !(target > 0)) e.target_weight_g = 'Weight must be above 0';
+    else if (target > 0 && totalGiven > 0 && target > totalGiven) e.target_weight_g = `Cannot be more than the gold for the job (${formatWeight(totalGiven)})`;
+    if (sourceItem && newGold > Number(sourceItem.net_weight_g)) e.issued_weight_g = `At most ${formatWeight(round3(Number(sourceItem.net_weight_g) + heldUsed))}`;
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
@@ -158,13 +176,16 @@ export default function IssueJobDialog({ onClose, onSaved }) {
         karat_id: usesSaved ? null : form.karat_id,
         issued_weight_g: rework ? null : Number(form.issued_weight_g),
         extra_weight_g: rework ? extra : 0,
+        target_weight_g: target > 0 ? target : null,
+        use_held_gold: useHeld,
         making_charge: Number(form.making_charge) || 0,
         craftsman_fee: Number(form.craftsman_fee) || 0,
-        source_item_id: !rework && source === 'stock' ? sourceItem.id : null,
+        source_item_id: !rework && source === 'stock' && !enoughHeld ? sourceItem.id : null,
       });
+      const heldNote = heldUsed > 0 ? ` (${formatWeight(heldUsed)} from gold he already had)` : '';
       notify(rework
-        ? `${res.data.job_no}: ${savedItem.item_code} given to ${res.data.craftsman_name}`
-        : `${res.data.job_no}: ${formatWeight(res.data.issued_weight_g)} given to ${res.data.craftsman_name}`);
+        ? `${res.data.job_no}: ${savedItem.item_code} given to ${res.data.craftsman_name}${heldNote}`
+        : `${res.data.job_no}: ${formatWeight(res.data.issued_weight_g)} given to ${res.data.craftsman_name}${heldNote}`);
       onSaved(res.data);
     } catch (err) {
       setErrors(fieldErrors(err));
@@ -244,16 +265,82 @@ export default function IssueJobDialog({ onClose, onSaved }) {
           </Grid>
         </FormSection>
 
-        <FormSection title="Gold given">
-          {!rework && (
+        <FormSection title="Weight & gold">
+          <Grid size={{ xs: 12, sm: 6 }}>
+            {field('karat_id', 'Karat', { select: true, required: !usesSaved, disabled: !!sourceItem || usesSaved, children: karats.map((k) => <MenuItem key={k.id} value={k.id}>{k.name}</MenuItem>) })}
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            {field('target_weight_g', rework ? 'Weight wanted after the work' : 'Piece weight wanted', {
+              ...grams, helperText: 'Exact weight of the finished piece; compared when it comes back',
+            })}
+          </Grid>
+          {rework ? (
+            <Grid size={{ xs: 12, sm: 6 }}>
+              {field('extra_weight_g', 'Extra gold added', {
+                ...grams, placeholder: '0',
+                helperText: reworkTotal !== null ? `Total with the piece ${formatWeight(reworkTotal)} (piece ${formatWeight(savedItem.net_weight_g)})` : 'Gold, if any',
+              })}
+            </Grid>
+          ) : (
+            <Grid size={{ xs: 12, sm: 6 }}>
+              {field('issued_weight_g', 'Gold for the job', {
+                required: true, ...grams,
+                helperText: target > 0 && looseGiven >= target ? `Allows ${formatWeight(round3(looseGiven - target))} for wastage` : 'Piece weight + wastage allowance',
+              })}
+            </Grid>
+          )}
+
+          {holds > 0 && (
             <Grid size={{ xs: 12 }}>
+              <Box sx={{ bgcolor: gold[50], border: `1px solid ${gold[200]}`, borderRadius: '14px', px: 2, py: 1.2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {craftsman.name} already holds {formatWeight(holds)} of {karatName}
+                  </Typography>
+                  <FormControlLabel sx={{ mr: 0 }} label={<Typography variant="body2">Use the gold he already has</Typography>}
+                    control={<Switch size="small" checked={useHeld} onChange={(e) => setUseHeld(e.target.checked)} />} />
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {!useHeld
+                    ? `Not used · all ${looseGiven > 0 ? formatWeight(looseGiven) + ' ' : ''}gold for this job is new · his ${formatWeight(holds)} stays with him`
+                    : looseGiven > 0
+                    ? enoughHeld
+                      ? `All ${formatWeight(looseGiven)} comes from his gold · no new gold to give · ${formatWeight(round3(holds - heldUsed))} stays with him`
+                      : `${formatWeight(heldUsed)} from his gold (all he has) · give ${formatWeight(newGold)} of new gold`
+                    : `His gold is used first for this job${rework ? '' : '; enter the gold for the job'}`}
+                </Typography>
+              </Box>
+            </Grid>
+          )}
+          {heldList.length > 0 && holds === 0 && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="caption" color="text.secondary">
+                {craftsman.name} holds {heldList.map((g) => `${formatWeight(g.gold_g)} of ${g.karat_name}`).join(', ')}
+                {form.karat_id ? ` · none of ${karatName}, so it cannot be used for this job` : ' · choose the karat to use it'}
+              </Typography>
+            </Grid>
+          )}
+          {holds > 0 && heldOther.length > 0 && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="caption" color="text.secondary">
+                Also holds {heldOther.map((g) => `${formatWeight(g.gold_g)} of ${g.karat_name}`).join(', ')} (other karats cannot be used here)
+              </Typography>
+            </Grid>
+          )}
+
+          {/* Where the new gold comes from; not needed when his own gold covers the job. */}
+          {!rework && !enoughHeld && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                {holds > 0 && useHeld ? 'New gold comes from' : 'Gold comes from'}
+              </Typography>
               <ToggleButtonGroup size="small" exclusive value={source} onChange={(e, v) => { if (v) { setSource(v); setSourceItem(null); } }}>
                 <ToggleButton value="loose">Loose gold</ToggleButton>
                 <ToggleButton value="stock">A biscuit / piece from stock</ToggleButton>
               </ToggleButtonGroup>
             </Grid>
           )}
-          {!rework && source === 'stock' && (
+          {!rework && !enoughHeld && source === 'stock' && (
             <>
               <Grid size={{ xs: 12, sm: 5 }}>
                 <TextField label="Barcode or item code" value={lookup} onChange={(e) => { setLookup(e.target.value); setSourceItem(null); }}
@@ -269,19 +356,6 @@ export default function IssueJobDialog({ onClose, onSaved }) {
                 </Grid>
               )}
             </>
-          )}
-          <Grid size={{ xs: 12, sm: 6 }}>
-            {field('karat_id', 'Karat', { select: true, required: !usesSaved, disabled: !!sourceItem || usesSaved, children: karats.map((k) => <MenuItem key={k.id} value={k.id}>{k.name}</MenuItem>) })}
-          </Grid>
-          {rework ? (
-            <Grid size={{ xs: 12, sm: 6 }}>
-              {field('extra_weight_g', 'Extra gold added', {
-                ...grams, placeholder: '0',
-                helperText: reworkTotal !== null ? `Total given ${formatWeight(reworkTotal)} (piece ${formatWeight(savedItem.net_weight_g)})` : 'Loose gold, if any',
-              })}
-            </Grid>
-          ) : (
-            <Grid size={{ xs: 12, sm: 6 }}>{field('issued_weight_g', 'Gold weight given', { required: true, ...grams })}</Grid>
           )}
         </FormSection>
 
