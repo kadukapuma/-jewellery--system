@@ -36,7 +36,7 @@ const g = (v) => `${Number(v || 0).toFixed(3)} g`;
 const round = (v) => formatAmount(Math.round(v));
 const pct = (v) => (v === null || v === undefined ? '—' : `${v}%`);
 const method = (m) => METHOD_LABELS[m] || m || '—';
-const JOB_TYPES = { new: 'New piece', make_item: 'Make saved item', rework: 'Rework' };
+const JOB_TYPES = { new: 'New piece', make_item: 'Make saved item', rework: 'Repair (our item)' };
 const GOLD_TXN = { extra_issue: 'Extra gold given', gold_returned: 'Gold returned', adjustment: 'Adjustment' };
 const SOURCES = { purchase: 'Purchase', craft: 'Made by craftsman', opening: 'Opening stock', old_gold: 'Old gold' };
 
