@@ -134,6 +134,13 @@ export default function InvoicePage() {
             {sale.customer_phone && <Typography variant="body2">{sale.customer_phone}</Typography>}
             {sale.customer_address && <Typography variant="body2">{sale.customer_address}</Typography>}
           </Box>
+          {sale.salesman_name && (
+            <Box>
+              <Typography variant="caption" color="text.secondary">Salesman</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{sale.salesman_name}</Typography>
+              {sale.salesman_code && <Typography variant="caption" color="text.secondary">{sale.salesman_code}</Typography>}
+            </Box>
+          )}
           <Box sx={{ textAlign: 'right' }}>
             <Typography variant="caption" color="text.secondary">Gold rate (per gram)</Typography>
             {rates.map(([k, r]) => <Typography key={k} variant="body2">{k}: {formatMoney(r)}</Typography>)}

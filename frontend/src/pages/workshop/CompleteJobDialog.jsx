@@ -23,8 +23,8 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
   // make_item / rework fill in the saved item instead of creating one.
   const saved = job.job_type === 'make_item' || job.job_type === 'rework';
   const rework = job.job_type === 'rework';
-  // Making one more of an item that is already in stock: the line keeps its weight and price per piece.
-  const addingPiece = job.job_type === 'make_item' && job.item_stock_qty > 0;
+  // One more piece of an item that already has pieces in stock: the line keeps its weight and price per piece.
+  const addingPiece = saved && job.item_stock_qty > 0;
   const [form, setForm] = useState({
     returned_weight_g: '',
     item_name: job.description || job.category_name,
@@ -124,7 +124,9 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{job.finished_item_code} · {job.finished_item_name}</Typography>
                     <Typography variant="caption" color="text.secondary">
                       {rework
-                        ? `Same item comes back – was ${formatWeight(job.item_weight_g)}, wastage ${formatWeight(job.item_wastage_g)}, making ${formatMoney(job.item_making_charge)}`
+                        ? (addingPiece
+                          ? `Adds 1 piece back to stock – ${job.item_stock_qty} in stock now, ${formatWeight(job.item_net_weight_g)} each. The item keeps its weight and price; this job keeps the real weight and wastage.`
+                          : `Same item comes back – was ${formatWeight(job.item_weight_g)}, wastage ${formatWeight(job.item_wastage_g)}, making ${formatMoney(job.item_making_charge)}`)
                         : addingPiece
                           ? `Adds 1 piece – ${job.item_stock_qty} in stock now, ${formatWeight(job.item_net_weight_g)} each. The item keeps its weight and price; this job keeps the real weight and wastage.`
                           : 'This saved item gets the finished weight and comes into stock'}
@@ -139,7 +141,7 @@ export default function CompleteJobDialog({ job, onClose, onSaved }) {
               )}
             </FormSection>
             <FormSection title="Charges">
-              <Grid size={{ xs: 12, sm: 6 }}>{field('making_charge', rework ? 'Making charge added' : 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: rework ? `Total ${formatMoney(totalMaking)}` : 'Customer pays' })}</Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>{field('making_charge', rework && !addingPiece ? 'Making charge added' : 'Making charge', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: rework && !addingPiece ? `Total ${formatMoney(totalMaking)}` : rework && addingPiece ? 'Craft charge for this repair' : 'Customer pays' })}</Grid>
               <Grid size={{ xs: 12, sm: 6 }}>{field('craftsman_fee', 'Craftsman fee', { type: 'number', slotProps: { htmlInput: { min: 0, step: 'any' } }, helperText: 'Added to what you owe them' })}</Grid>
             </FormSection>
           </Grid>

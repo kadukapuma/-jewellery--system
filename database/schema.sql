@@ -277,6 +277,25 @@ CREATE TABLE customers (
 );
 
 -- ---------------------------------------------------------------------
+-- 8b. SALESMEN (sales staff)
+-- ---------------------------------------------------------------------
+CREATE TABLE salesmen (
+  id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code                VARCHAR(30) NOT NULL UNIQUE,
+  name                VARCHAR(150) NOT NULL,
+  phone               VARCHAR(30) NULL,
+  nic                 VARCHAR(30) NULL,
+  email               VARCHAR(100) NULL,
+  address             VARCHAR(255) NULL,
+  commission_percent  DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  is_active           TINYINT(1) NOT NULL DEFAULT 1,
+  created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_salesman_code (code),
+  INDEX idx_salesman_name (name)
+);
+
+-- ---------------------------------------------------------------------
 -- 9. ITEMS (item master - every piece / biscuit in stock)
 --    source = 'purchase' -> came from a supplier (wastage_g = 0)
 --    source = 'craft'    -> made by a craftsman (wastage_g from craft job)
@@ -399,6 +418,7 @@ CREATE TABLE sales (
   id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   invoice_no           VARCHAR(30) NOT NULL UNIQUE,     -- INV-000001
   customer_id          INT UNSIGNED NULL,               -- NULL = walk-in
+  salesman_id          INT UNSIGNED NULL,               -- NULL = no salesman assigned
   sale_date            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   subtotal             DECIMAL(14,2) NOT NULL,
   discount             DECIMAL(14,2) NOT NULL DEFAULT 0,
@@ -412,6 +432,7 @@ CREATE TABLE sales (
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_sale_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_sale_salesman FOREIGN KEY (salesman_id) REFERENCES salesmen(id) ON DELETE SET NULL,
   CONSTRAINT fk_sale_user     FOREIGN KEY (created_by)  REFERENCES users(id),
   INDEX idx_sale_date (sale_date)
 );
@@ -900,6 +921,7 @@ FROM (
   UNION ALL SELECT 'items', 5        UNION ALL SELECT 'suppliers', 6
   UNION ALL SELECT 'craftsmen', 7    UNION ALL SELECT 'customers', 8
   UNION ALL SELECT 'purchases', 9    UNION ALL SELECT 'craft_jobs', 10
+  UNION ALL SELECT 'salesmen', 11
 ) m
 CROSS JOIN (
   SELECT 'view' AS action, 1 AS sort_order UNION ALL SELECT 'create', 2
@@ -972,6 +994,7 @@ SELECT r.id, p.id FROM roles r JOIN permissions p
 WHERE r.name = 'Cashier'
   AND p.code IN ('dashboard.view','gold_prices.view','items.view',
                  'customers.view','customers.create','customers.edit',
+                 'salesmen.view',
                  'sales.view','sales.create','sales.reprint',
                  'customer_payments.view','customer_payments.create',
                  'instalments.view','tags.print',
@@ -1021,6 +1044,7 @@ INSERT INTO document_sequences (code, prefix) VALUES
   ('CSH',  'CSH-'),   -- cash / bank entries
   ('REP',  'REP-'),   -- customer repairs
   ('OGR',  'OGR-'),   -- old gold receipts
+  ('SM',   'SM-'),    -- salesmen codes
   ('ITEM', 'JW');     -- item barcodes: JW000001
 
 INSERT INTO expense_categories (name) VALUES

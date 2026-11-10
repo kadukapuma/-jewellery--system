@@ -28,6 +28,7 @@ const METHOD_NAMES = { cash: 'cash', card: 'card', bank_transfer: 'bank transfer
 
 const createSchema = z.object({
   customer_id: z.coerce.number().int().positive().optional().nullable(),
+  salesman_id: z.coerce.number().int().positive().optional().nullable(),
   lines: z
     .array(z.object({
       item_id: idSchema,
@@ -68,6 +69,7 @@ const createSchema = z.object({
 const listSchema = z.object({
   search: z.string().trim().max(50).default(''),
   customer_id: z.coerce.number().int().positive().optional(),
+  salesman_id: z.coerce.number().int().positive().optional(),
   status: z.enum(['completed', 'cancelled', 'all']).default('completed'),
   payment_status: z.enum(['unpaid', 'partial', 'paid', 'all']).default('all'),
   from: dateSchema.optional(),
@@ -79,8 +81,12 @@ const listSchema = z.object({
 export async function findSale(db, id) {
   const [[sale]] = await db.query(
     `SELECT s.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.nic AS customer_nic,
+            sm.name AS salesman_name, sm.code AS salesman_code,
             u.name AS created_by_name
-     FROM sales s LEFT JOIN customers c ON c.id = s.customer_id JOIN users u ON u.id = s.created_by
+     FROM sales s
+     LEFT JOIN customers c ON c.id = s.customer_id
+     LEFT JOIN salesmen sm ON sm.id = s.salesman_id
+     JOIN users u ON u.id = s.created_by
      WHERE s.id = ?`,
     [id],
   );
@@ -123,20 +129,21 @@ router.get('/', requirePermission('sales.view'), async (req, res) => {
   const q = listSchema.parse(req.query);
   const where = [];
   const params = [];
-  if (q.search) { where.push('(s.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)'); params.push(`%${q.search}%`, `%${q.search}%`, `%${q.search}%`); }
+  if (q.search) { where.push('(s.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR sm.name LIKE ?)'); params.push(`%${q.search}%`, `%${q.search}%`, `%${q.search}%`, `%${q.search}%`); }
   if (q.customer_id) { where.push('s.customer_id = ?'); params.push(q.customer_id); }
+  if (q.salesman_id) { where.push('s.salesman_id = ?'); params.push(q.salesman_id); }
   if (q.status !== 'all') { where.push('s.status = ?'); params.push(q.status); }
   if (q.payment_status !== 'all') { where.push('s.payment_status = ?'); params.push(q.payment_status); }
   if (q.from) { where.push('s.sale_date >= ?'); params.push(q.from); }
   if (q.to) { where.push('s.sale_date < DATE_ADD(?, INTERVAL 1 DAY)'); params.push(q.to); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const from = 'FROM sales s LEFT JOIN customers c ON c.id = s.customer_id';
+  const from = 'FROM sales s LEFT JOIN customers c ON c.id = s.customer_id LEFT JOIN salesmen sm ON sm.id = s.salesman_id';
   const [[sums]] = await pool.query(
     `SELECT COUNT(*) AS total, COALESCE(SUM(s.total), 0) AS amount, COALESCE(SUM(s.balance), 0) AS balance ${from} ${whereSql}`,
     params,
   );
   const [rows] = await pool.query(
-    `SELECT s.*, c.name AS customer_name, c.phone AS customer_phone,
+    `SELECT s.*, c.name AS customer_name, c.phone AS customer_phone, sm.name AS salesman_name, sm.code AS salesman_code,
             (SELECT COUNT(*) FROM sale_lines sl WHERE sl.sale_id = s.id) AS line_count,
             s.status = 'completed' AND s.balance > 0 AND s.due_date < CURDATE() AS is_overdue
      ${from} ${whereSql} ORDER BY s.sale_date DESC, s.id DESC LIMIT ? OFFSET ?`,
@@ -283,9 +290,9 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
     // 5. Save the bill.
     const invoiceNo = await nextDocumentNumber(conn, 'INV');
     const [saleResult] = await conn.query(
-      `INSERT INTO sales (invoice_no, customer_id, sale_date, subtotal, discount, total, paid_amount, balance, payment_status, due_date, notes, status, created_by)
-       VALUES (?, ?, NOW(), ?, ?, ?, 0, ?, 'unpaid', ?, ?, 'completed', ?)`,
-      [invoiceNo, customer?.id ?? null, subtotal, discount, total, total, creditNeeded > 0 ? data.due_date ?? null : null, data.notes, req.user.id],
+      `INSERT INTO sales (invoice_no, customer_id, salesman_id, sale_date, subtotal, discount, total, paid_amount, balance, payment_status, due_date, notes, status, created_by)
+       VALUES (?, ?, ?, NOW(), ?, ?, ?, 0, ?, 'unpaid', ?, ?, 'completed', ?)`,
+      [invoiceNo, customer?.id ?? null, data.salesman_id ?? null, subtotal, discount, total, total, creditNeeded > 0 ? data.due_date ?? null : null, data.notes, req.user.id],
     );
     const saleId = saleResult.insertId;
 

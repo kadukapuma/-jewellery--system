@@ -9,6 +9,7 @@ export const MODULE_LABELS = {
   suppliers: 'Suppliers',
   craftsmen: 'Craftsmen',
   customers: 'Customers',
+  salesmen: 'Salesmen',
   purchases: 'Purchases',
   craft_jobs: 'Craft Jobs',
   repairs: 'Customer Repairs',

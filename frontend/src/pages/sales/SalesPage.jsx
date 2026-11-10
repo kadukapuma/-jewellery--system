@@ -18,12 +18,19 @@ export default function SalesPage() {
   const { can } = useAuth();
   const notify = useNotify();
   const navigate = useNavigate();
-  const [filters, setFilters] = useState({ search: '', status: 'completed', payment_status: 'all', from: '', to: '' });
+  const [salesmen, setSalesmen] = useState([]);
+  const [filters, setFilters] = useState({ search: '', salesman_id: '', status: 'completed', payment_status: 'all', from: '', to: '' });
   const [searchText, setSearchText] = useState('');
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [data, setData] = useState({ total: 0, sums: null, sales: [] });
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/salesmen')
+      .then((res) => setSalesmen(res.data))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,6 +68,12 @@ export default function SalesPage() {
             <MenuItem value="all">All</MenuItem>
             {Object.entries(PAYMENT_STATUS).map(([v, s]) => <MenuItem key={v} value={v}>{s.label}</MenuItem>)}
           </TextField>
+          {salesmen.length > 0 && (
+            <TextField select label="Salesman" value={filters.salesman_id} onChange={setFilter('salesman_id')} sx={{ width: 160 }}>
+              <MenuItem value="">All salesmen</MenuItem>
+              {salesmen.map((sm) => <MenuItem key={sm.id} value={sm.id}>{sm.name}</MenuItem>)}
+            </TextField>
+          )}
           <TextField select label="Status" value={filters.status} onChange={setFilter('status')} sx={{ width: 140 }}>
             <MenuItem value="completed">Completed</MenuItem>
             <MenuItem value="cancelled">Cancelled</MenuItem>
@@ -77,6 +90,7 @@ export default function SalesPage() {
                 <TableCell>Date</TableCell>
                 <TableCell>Bill</TableCell>
                 <TableCell>Customer</TableCell>
+                <TableCell>Salesman</TableCell>
                 <TableCell align="right">Items</TableCell>
                 <TableCell align="right">Total</TableCell>
                 <TableCell align="right">Balance</TableCell>
@@ -92,6 +106,14 @@ export default function SalesPage() {
                     {s.customer_name || <Typography variant="body2" color="text.secondary">Walk-in</Typography>}
                     {s.customer_phone && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{s.customer_phone}</Typography>}
                   </TableCell>
+                  <TableCell>
+                    {s.salesman_name ? (
+                      <>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{s.salesman_name}</Typography>
+                        {s.salesman_code && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{s.salesman_code}</Typography>}
+                      </>
+                    ) : '—'}
+                  </TableCell>
                   <TableCell align="right">{s.line_count}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(s.total)}</TableCell>
                   <TableCell align="right">{s.status === 'completed' && s.balance > 0 ? formatMoney(s.balance) : '—'}</TableCell>
@@ -106,11 +128,11 @@ export default function SalesPage() {
                 </TableRow>
               ))}
               {!loading && !data.sales.length && (
-                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>No bills found</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} align="center" sx={{ py: 5, color: 'text.secondary' }}>No bills found</TableCell></TableRow>
               )}
               {data.sums && data.sales.length > 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ fontWeight: 600 }}>Total ({data.total})</TableCell>
+                  <TableCell colSpan={5} sx={{ fontWeight: 600 }}>Total ({data.total})</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(data.sums.amount)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{filters.status === 'completed' ? formatMoney(data.sums.balance) : ''}</TableCell>
                   <TableCell />

@@ -27,8 +27,7 @@ const SAVED_ITEM = {
   },
   rework: {
     params: { status: 'in_stock', stock: 'available' },
-    check: (i) => (i.status !== 'in_stock' || i.stock_qty < 1 ? `${i.item_code} is not in stock`
-      : i.stock_qty > 1 ? `${i.item_code} has ${i.stock_qty} pieces. Only single pieces can be reworked.` : null),
+    check: (i) => (i.status !== 'in_stock' || i.stock_qty < 1 ? `${i.item_code} is not in stock` : null),
     emptyText: 'No pieces in stock match',
   },
 };
@@ -242,7 +241,10 @@ export default function IssueJobDialog({ onClose, onSaved }) {
               <Grid size={{ xs: 12 }}>
                 <GoldBox item={savedItem}>
                   {savedItem.category_name} · {savedItem.karat_name}
-                  {rework ? ` · ${formatWeight(savedItem.net_weight_g)} · leaves stock until it comes back`
+                  {rework
+                    ? savedItem.stock_qty > 1
+                      ? ` · ${formatWeight(savedItem.net_weight_g)} each · 1 piece leaves stock (${savedItem.stock_qty - 1} remain in stock)`
+                      : ` · ${formatWeight(savedItem.net_weight_g)} · leaves stock until it comes back`
                     : savedItem.stock_qty > 0 ? ` · ${savedItem.stock_qty} in stock · the finished piece adds 1 more`
                       : ' · weight is filled in when it comes back'}
                 </GoldBox>

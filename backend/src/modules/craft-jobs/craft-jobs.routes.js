@@ -151,16 +151,14 @@ router.get('/:id', requirePermission('craft_jobs.view'), async (req, res) => {
 async function lockSavedItem(conn, data) {
   const [[item]] = await conn.query('SELECT * FROM items WHERE id = ? FOR UPDATE', [data.item_id]);
   if (!item) throw new HttpError(400, 'Saved item not found');
-  // Making more of an item can run as several jobs at once, but never while the piece is out for a rework;
-  // a rework needs the item to be on no other open job.
-  const [[open]] = await conn.query(
-    `SELECT job_no FROM craft_jobs WHERE item_id = ? AND status = 'issued' ${data.job_type === 'make_item' ? "AND job_type = 'rework'" : ''} LIMIT 1`,
-    [item.id],
-  );
-  if (open) throw new HttpError(400, `${item.item_code} is ${data.job_type === 'make_item' ? 'out for a repair on' : 'already on'} job ${open.job_no}`);
   if (data.job_type === 'rework') {
     if (item.status !== 'in_stock' || item.stock_qty < 1) throw new HttpError(400, `${item.item_code} is not in stock`);
-    if (item.stock_qty > 1) throw new HttpError(400, `${item.item_code} has ${item.stock_qty} pieces. Only single pieces can be reworked.`);
+  } else if (data.job_type === 'make_item' && item.stock_qty === 0) {
+    const [[openRework]] = await conn.query(
+      "SELECT job_no FROM craft_jobs WHERE item_id = ? AND status = 'issued' AND job_type = 'rework' LIMIT 1",
+      [item.id],
+    );
+    if (openRework) throw new HttpError(400, `${item.item_code} is out for a repair on job ${openRework.job_no}`);
   }
   return item;
 }
@@ -224,8 +222,11 @@ router.post('/', requirePermission('craft_jobs.create'), async (req, res) => {
     const job = { id: result.insertId, craftsman_id: data.craftsman_id, karat_id: data.karat_id };
 
     if (data.job_type === 'rework') {
-      // The piece itself leaves stock until it comes back.
-      await conn.query("UPDATE items SET stock_qty = 0, status = 'with_craftsman' WHERE id = ?", [saved.id]);
+      // One piece leaves stock; if no pieces remain in stock, mark with_craftsman until it comes back.
+      await conn.query(
+        "UPDATE items SET stock_qty = stock_qty - 1, status = IF(stock_qty = 0, 'with_craftsman', status) WHERE id = ?",
+        [saved.id],
+      );
       await moveStock(conn, req, saved.id, 'craft_issue', -1, -Number(saved.net_weight_g), job.id);
     }
     // make_item: nothing leaves stock and the item stays as it is (pieces already in stock can still be sold).
@@ -323,16 +324,28 @@ router.post('/:id/complete', requirePermission('craft_jobs.complete'), async (re
         await conn.query("UPDATE items SET stock_qty = stock_qty + 1, cost_price = ?, status = 'in_stock' WHERE id = ?", [avgCost, itemId]);
       }
     } else {
-      // Rework: the same piece comes back. The customer still pays for all the gold it ever used,
-      // so this job's wastage and making are added to what the piece already had.
-      await conn.query(
-        `UPDATE items SET net_weight_g = ?, wastage_g = wastage_g + ?, making_charge = making_charge + ?,
-                          price_min_percent = ?, price_max_percent = ?, cost_price = cost_price + ?,
-                          stock_qty = 1, status = 'in_stock'
-         WHERE id = ?`,
-        [data.returned_weight_g, wastage, data.making_charge, data.price_min_percent, data.price_max_percent,
-          round2(goldCost + data.craftsman_fee), itemId],
-      );
+      // Rework: the piece comes back.
+      const [[target]] = await conn.query('SELECT stock_qty, cost_price FROM items WHERE id = ? FOR UPDATE', [itemId]);
+      const repairCost = round2(goldCost + data.craftsman_fee);
+      if (target.stock_qty === 0) {
+        // Single piece (or last piece): update the item's weight, wastage, making charge and cost directly.
+        await conn.query(
+          `UPDATE items SET net_weight_g = ?, wastage_g = wastage_g + ?, making_charge = making_charge + ?,
+                            price_min_percent = ?, price_max_percent = ?, cost_price = cost_price + ?,
+                            stock_qty = 1, status = 'in_stock'
+           WHERE id = ?`,
+          [data.returned_weight_g, wastage, data.making_charge, data.price_min_percent, data.price_max_percent,
+            repairCost, itemId],
+        );
+      } else {
+        // Other pieces of this item are already in stock: add 1 piece back.
+        // The line keeps its weight and price per piece; cost becomes the average across all pieces.
+        const avgCost = round2((Number(target.cost_price) * target.stock_qty + (Number(target.cost_price) + repairCost)) / (target.stock_qty + 1));
+        await conn.query(
+          "UPDATE items SET stock_qty = stock_qty + 1, cost_price = ?, status = 'in_stock' WHERE id = ?",
+          [avgCost, itemId],
+        );
+      }
     }
 
     await conn.query(
@@ -382,7 +395,7 @@ router.post('/:id/cancel', requirePermission('craft_jobs.delete'), async (req, r
     }
     if (job.job_type === 'rework') {
       // The piece comes back as it was.
-      await conn.query("UPDATE items SET stock_qty = 1, status = 'in_stock' WHERE id = ?", [job.item_id]);
+      await conn.query("UPDATE items SET stock_qty = stock_qty + 1, status = 'in_stock' WHERE id = ?", [job.item_id]);
       await moveStock(conn, req, job.item_id, 'adjustment', 1, Number(job.item_weight_g), id);
       fx.add('stock', `${await itemName(job.item_id)} goes back into stock as it was`, '/items');
     } else if (job.job_type === 'make_item') {

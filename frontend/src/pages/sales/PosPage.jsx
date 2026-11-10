@@ -17,6 +17,7 @@ import { calcItemPrice, calcPriceRange, formatWeight } from '../../utils/pricing
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { gold, stone } from '../../theme';
 import CustomerPicker from './CustomerPicker';
+import SalesmanPicker from './SalesmanPicker';
 import ItemPickerDialog from './ItemPickerDialog';
 import RecyclingIcon from '@mui/icons-material/Recycling';
 import { OldGoldExchangeDialog } from '../old-gold/OldGoldDialog';
@@ -70,6 +71,7 @@ export default function PosPage() {
   const [picking, setPicking] = useState(false);
   const [cart, setCart] = useState([]); // { item, qty, unitPrice }
   const [customer, setCustomer] = useState(null);
+  const [salesman, setSalesman] = useState(null);
   const [discount, setDiscount] = useState('');
   const [useAdvance, setUseAdvance] = useState(true);
   const [oldGold, setOldGold] = useState([]); // pieces taken in exchange (saved with the bill)
@@ -90,8 +92,15 @@ export default function PosPage() {
       Promise.all(correcting.lines.map((l) => api.get(`/items/${l.item_id}`)
         .then((r) => ({ item: r.data, qty: l.qty, unitPrice: String(l.unit_price) })))),
       correcting.customer_id ? api.get(`/customers/${correcting.customer_id}`).then((r) => r.data) : null,
+      correcting.salesman_id ? api.get(`/salesmen/${correcting.salesman_id}`).then((r) => r.data) : null,
     ])
-      .then(([items, cust]) => { if (active) { setCart(items); setCustomer(cust); } })
+      .then(([items, cust, sm]) => {
+        if (active) {
+          setCart(items);
+          setCustomer(cust);
+          if (sm) setSalesman(sm);
+        }
+      })
       .catch((err) => active && setError(errorMessage(err)));
     return () => { active = false; };
   }, [correcting]);
@@ -192,6 +201,7 @@ export default function PosPage() {
     try {
       const res = await api.post('/sales', {
         customer_id: customer?.id ?? null,
+        salesman_id: salesman?.id ?? null,
         lines: lines.map((l) => ({ item_id: l.item.id, qty: l.qty, unit_price: l.price.sold })),
         discount: billDiscount,
         payments: payments.filter((p) => Number(p.amount) > 0).map((p) => ({ ...p, amount: Number(p.amount) })),
@@ -340,6 +350,10 @@ export default function PosPage() {
       <Grid size={{ xs: 12, lg: 4 }}>
         <Box sx={{ position: { lg: 'sticky' }, top: 16 }}>
           <Card sx={{ p: 2.5, mb: 2 }}>
+            <Box sx={{ mb: 2 }}>
+              <SalesmanPicker value={salesman} onChange={setSalesman} />
+            </Box>
+            <Divider sx={{ my: 1.5 }} />
             <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setUseAdvance(true); }} />
             {customer && (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>

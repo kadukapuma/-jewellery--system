@@ -99,6 +99,7 @@ const NAV_CATEGORIES = [
         icon: MasterIcon,
         children: [
           { label: 'Customers', path: '/customers', perm: 'customers.view' },
+          { label: 'Salesmen', path: '/salesmen', perm: 'salesmen.view' },
           { label: 'Suppliers', path: '/suppliers', perm: 'suppliers.view' },
           { label: 'Item Categories', path: '/categories', perm: 'categories.view' },
           { label: 'Karats', path: '/karats', perm: 'karats.view' },

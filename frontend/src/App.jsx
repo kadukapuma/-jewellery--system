@@ -28,6 +28,7 @@ import PosPage from './pages/sales/PosPage';
 import SalesPage from './pages/sales/SalesPage';
 import InvoicePage from './pages/sales/InvoicePage';
 import CustomersPage from './pages/sales/CustomersPage';
+import SalesmenPage from './pages/sales/SalesmenPage';
 import CustomerPaymentsPage from './pages/sales/CustomerPaymentsPage';
 import SettingsPage from './pages/admin/SettingsPage';
 import ReportsPage from './pages/reports/ReportsPage';
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="sales" element={<RequirePermission perm="sales.view"><SalesPage /></RequirePermission>} />
           <Route path="sales/:id" element={<RequirePermission perm={['sales.view', 'sales.reprint']}><InvoicePage /></RequirePermission>} />
           <Route path="customers" element={<RequirePermission perm="customers.view"><CustomersPage /></RequirePermission>} />
+          <Route path="salesmen" element={<RequirePermission perm="salesmen.view"><SalesmenPage /></RequirePermission>} />
           <Route path="customer-payments" element={<RequirePermission perm="customer_payments.view"><CustomerPaymentsPage /></RequirePermission>} />
           <Route path="reports" element={<RequirePermission perm={['reports.sales', 'reports.profit', 'reports.stock', 'reports.wastage', 'reports.customer_balances', 'reports.supplier_balances', 'reports.craftsman_balances']}><ReportsPage /></RequirePermission>} />
           <Route path="finance" element={<RequirePermission perm="finance.view"><FinanceOverviewPage /></RequirePermission>} />
