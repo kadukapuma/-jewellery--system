@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 
@@ -82,18 +83,19 @@ router.post('/', requirePermission('craftsman_payments.create'), async (req, res
 
 router.post('/:id/cancel', requirePermission('craftsman_payments.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'craftsman_payments', recordId: id }, async (conn, fx) => {
     const payment = await findPayment(conn, id);
     if (payment.status === 'cancelled') throw new HttpError(400, 'This payment is already cancelled');
     await assertDayOpen(conn, payment.payment_date);
+    await fx.watchCraftsman(conn, payment.craftsman_id);
     await conn.query(
       "UPDATE craftsman_payments SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE id = ?",
       [reason ? `Cancelled: ${reason}` : 'Cancelled', id],
     );
     await writeAudit(conn, req, { action: 'cancel', table: 'craftsman_payments', recordId: id, oldValues: { payment_no: payment.payment_no, amount: payment.amount }, newValues: { reason } });
   });
-  res.json(await findPayment(pool, id));
+  await sendCancel(res, outcome, () => findPayment(pool, id));
 });
 
 cancelledRecordRoutes(router, {

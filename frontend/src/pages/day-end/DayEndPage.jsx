@@ -13,7 +13,7 @@ import { useAuth } from '../../auth/AuthContext';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import { formatAmount, formatDate, formatDateTime, formatMoney, formatTime } from '../../utils/format';
-import { PAYMENT_METHODS, PAYMENT_STATUS, todayYmd } from '../../utils/payments';
+import { METHOD_LABELS, PAYMENT_STATUS, todayYmd } from '../../utils/payments';
 import { ACCOUNTS, CASH_ENTRY_TYPES, MONEY_KINDS } from '../../utils/finance';
 import { MOVEMENT_TYPES } from '../../utils/stock';
 import { downloadCsv } from '../../utils/csv';
@@ -35,10 +35,10 @@ const PRINT_CSS = `
 const g = (v) => `${Number(v || 0).toFixed(3)} g`;
 const round = (v) => formatAmount(Math.round(v));
 const pct = (v) => (v === null || v === undefined ? '—' : `${v}%`);
-const method = (m) => PAYMENT_METHODS[m] || m || '—';
+const method = (m) => METHOD_LABELS[m] || m || '—';
 const JOB_TYPES = { new: 'New piece', make_item: 'Make saved item', rework: 'Rework' };
 const GOLD_TXN = { extra_issue: 'Extra gold given', gold_returned: 'Gold returned', adjustment: 'Adjustment' };
-const SOURCES = { purchase: 'Purchase', craft: 'Made by craftsman', opening: 'Opening stock' };
+const SOURCES = { purchase: 'Purchase', craft: 'Made by craftsman', opening: 'Opening stock', old_gold: 'Old gold' };
 
 function shiftDay(ymd, days) {
   const [y, m, d] = ymd.split('-').map(Number);
@@ -450,6 +450,24 @@ function DayView({ data }) {
           { label: 'In stock now', value: st.in_stock_now_pieces, note: g(st.in_stock_now_g), strong: true },
         ]} />
         <Grid container spacing={2.5}>
+          {s.old_gold && (
+            <Grid size={{ xs: 12 }}>
+              <ReportTable
+                title={`Old gold taken in · ${g(s.old_gold.totals.weight_g)} · ${formatMoney(s.old_gold.totals.value)} (exchanged ${formatMoney(s.old_gold.totals.exchange)} · credit ${formatMoney(s.old_gold.totals.credit)} · paid out ${formatMoney(s.old_gold.totals.cash)})`}
+                rows={s.old_gold.list}
+                empty="No old gold taken in on this day"
+                columns={[
+                  { label: 'Receipt', nowrap: true, render: (r) => r.receipt_no },
+                  { label: 'Customer', render: (r) => r.customer },
+                  { label: 'Given as', render: (r) => (r.mode === 'exchange' ? `Bill ${r.invoice_no || ''}` : r.mode === 'credit' ? 'Credit / advance' : `Paid out · ${method(r.payout_method)}`) },
+                  { label: 'Pieces', align: 'right', render: (r) => r.pieces },
+                  { label: 'Net gold', align: 'right', nowrap: true, render: (r) => g(r.total_net_weight_g) },
+                  { label: 'Value', align: 'right', render: (r) => formatMoney(r.total_value) },
+                ]}
+                footer={['Total', '', '', s.old_gold.totals.pieces, g(s.old_gold.totals.weight_g), formatMoney(s.old_gold.totals.value)]}
+              />
+            </Grid>
+          )}
           <Grid size={{ xs: 12, lg: 5 }}>
             <ReportTable title="Stock movements" rows={s.stock.by_type} empty="No stock moved on this day" columns={[
               { label: 'Type', render: (r) => MOVEMENT_TYPES[r.label] || r.label },

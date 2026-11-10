@@ -12,6 +12,7 @@ export const MODULE_LABELS = {
   purchases: 'Purchases',
   craft_jobs: 'Craft Jobs',
   repairs: 'Customer Repairs',
+  old_gold: 'Old Gold',
   sales: 'Sales / Billing',
   customer_payments: 'Customer Payments',
   instalments: 'Instalments',

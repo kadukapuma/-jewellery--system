@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CancelIcon from '@mui/icons-material/CancelOutlined';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
 import StatCard from '../../components/StatCard';
@@ -20,34 +21,17 @@ import CashEntryDialog from './CashEntryDialog';
 const accountText = (e) => (e.entry_type === 'deposit' ? 'Cash → Bank' : e.entry_type === 'withdrawal' ? 'Bank → Cash' : ACCOUNTS[e.account]);
 
 function CancelEntryDialog({ entry, onClose, onDone }) {
-  const notify = useNotify();
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/finance/cash-entries/${entry.id}/cancel`, { reason });
-      notify(`${entry.entry_no} cancelled`);
-      onDone();
-    } catch (err) {
-      notify(errorMessage(err), 'error');
-      setBusy(false);
-    }
-  };
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {entry.entry_no}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {CASH_ENTRY_TYPES[entry.entry_type].label} of {formatMoney(entry.amount)} ({accountText(entry)}). The balances will be worked out again without it.
-        </Typography>
-        <TextField label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Wrong amount" />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep entry</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy}>Cancel entry</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`Cancel ${entry.entry_no}`}
+      url={`/finance/cash-entries/${entry.id}/cancel`}
+      intro={`${CASH_ENTRY_TYPES[entry.entry_type].label} of ${formatMoney(entry.amount)} (${accountText(entry)}).`}
+      reasonPlaceholder="e.g. Wrong amount"
+      keepText="Keep entry"
+      confirmText="Cancel entry"
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }
 

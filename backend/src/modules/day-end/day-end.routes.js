@@ -60,10 +60,11 @@ router.get('/', requirePermission('day_end.view'), async (req, res) => {
        UNION SELECT DATE(payment_date) FROM customer_payments WHERE payment_date >= ? - INTERVAL 30 DAY AND payment_date < ?
        UNION SELECT expense_date FROM expenses WHERE expense_date >= ? - INTERVAL 30 DAY AND expense_date < ?
        UNION SELECT purchase_date FROM purchases WHERE purchase_date >= ? - INTERVAL 30 DAY AND purchase_date < ?
+       UNION SELECT receipt_date FROM old_gold_receipts WHERE receipt_date >= ? - INTERVAL 30 DAY AND receipt_date < ?
      ) d
      WHERE NOT EXISTS (SELECT 1 FROM day_closings dc WHERE dc.close_date = d.day AND dc.status = 'closed')
      ORDER BY d.day DESC LIMIT 10`,
-    Array(8).fill(today),
+    Array(10).fill(today),
   );
   res.json({
     date,

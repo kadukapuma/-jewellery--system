@@ -4,6 +4,7 @@ import {
   Box, Button, Card, Chip, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Table,
   TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
 } from '@mui/material';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
@@ -18,34 +19,17 @@ import { PAYMENT_METHODS } from '../../utils/payments';
 import SupplierPaymentDialog from './SupplierPaymentDialog';
 
 function CancelPaymentDialog({ payment, onClose, onDone }) {
-  const notify = useNotify();
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/supplier-payments/${payment.id}/cancel`, { reason });
-      notify(`${payment.payment_no} cancelled`);
-      onDone();
-    } catch (err) {
-      notify(errorMessage(err), 'error');
-      setBusy(false);
-    }
-  };
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {payment.payment_no}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {formatMoney(payment.amount)} to {payment.supplier_name}. The purchases it paid will show as unpaid again. The record stays in the history.
-        </Typography>
-        <TextField label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Cheque bounced" />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep payment</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy}>Cancel payment</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`Cancel ${payment.payment_no}`}
+      url={`/supplier-payments/${payment.id}/cancel`}
+      intro={`${formatMoney(payment.amount)} to ${payment.supplier_name}. The record stays in the history.`}
+      reasonPlaceholder="e.g. Cheque bounced"
+      keepText="Keep payment"
+      confirmText="Cancel payment"
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }
 

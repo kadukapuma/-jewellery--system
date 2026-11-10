@@ -4,6 +4,7 @@ export const MONEY_KINDS = {
   supplier_payment: { label: 'Supplier payment', color: 'warning' },
   craftsman_payment: { label: 'Craftsman payment', color: 'warning' },
   expense: { label: 'Expense', color: 'error' },
+  old_gold: { label: 'Old gold bought', color: 'warning' },
   opening: { label: 'Opening balance', color: 'default' },
   capital_in: { label: 'Capital in', color: 'info' },
   drawing: { label: 'Drawing', color: 'info' },

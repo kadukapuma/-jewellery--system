@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, money, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocateCustomerPayment, recomputeSale } from './customer-payments.service.js';
@@ -106,11 +107,15 @@ router.post('/', requirePermission('customer_payments.create'), async (req, res)
 
 router.post('/:id/cancel', requirePermission('customer_payments.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'customer_payments', recordId: id }, async (conn, fx) => {
     const payment = await findPayment(conn, id);
     if (payment.status === 'cancelled') throw new HttpError(400, 'This receipt is already cancelled');
+    if (payment.old_gold_id) throw new HttpError(400, 'This is the value of old gold taken in. Cancel it from Old Gold (the gold goes back to the customer).');
     await assertDayOpen(conn, payment.payment_date);
+    await fx.watchCustomer(conn, payment.customer_id);
+    await fx.watchSales(conn, payment.allocations.map((a) => a.sale_id));
+    if (payment.unallocated > 0.009) fx.add('customer', `${money(payment.unallocated)} of it was an advance: that advance is gone`);
     await conn.query(
       "UPDATE customer_payments SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE id = ?",
       [reason ? `Cancelled: ${reason}` : 'Cancelled', id],
@@ -122,7 +127,7 @@ router.post('/:id/cancel', requirePermission('customer_payments.cancel'), async 
       oldValues: { receipt_no: payment.receipt_no, amount: payment.amount, allocations: payment.allocations }, newValues: { reason },
     });
   });
-  res.json(await findPayment(pool, id));
+  await sendCancel(res, outcome, () => findPayment(pool, id));
 });
 
 cancelledRecordRoutes(router, {

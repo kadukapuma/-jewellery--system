@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { adminApproval } from '../../utils/changeGuard.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
@@ -127,8 +128,8 @@ router.post('/', requirePermission('expenses.create'), async (req, res) => {
 
 router.post('/:id/cancel', requirePermission('expenses.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'expenses', recordId: id }, async (conn) => {
     const expense = await findExpense(conn, id);
     if (expense.status === 'cancelled') throw new HttpError(400, 'This expense is already cancelled');
     await assertDayOpen(conn, expense.expense_date);
@@ -138,7 +139,7 @@ router.post('/:id/cancel', requirePermission('expenses.cancel'), async (req, res
     );
     await writeAudit(conn, req, { action: 'cancel', table: 'expenses', recordId: id, oldValues: { expense_no: expense.expense_no, amount: expense.amount }, newValues: { reason } });
   });
-  res.json(await findExpense(pool, id));
+  await sendCancel(res, outcome, () => findExpense(pool, id));
 });
 
 cancelledRecordRoutes(router, {

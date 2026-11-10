@@ -44,3 +44,11 @@ export function calcPriceRange(item, gramPrice) {
 export function poundByPurity(basePoundPrice, basePurity, targetPurity) {
   return Math.round((basePoundPrice * targetPurity) / basePurity);
 }
+
+// Value of a customer's old gold: net gold weight × the day's gram price, less the shop's deduction %.
+//   net weight = gross weight - stones
+export function calcOldGoldValue({ gross_weight_g, stone_weight_g = 0 }, gramPrice, deductionPercent = 0) {
+  const net_weight_g = (Math.round(Number(gross_weight_g) * 1000) - Math.round(Number(stone_weight_g) * 1000)) / 1000;
+  const value = round2(net_weight_g * gramPrice * (1 - Number(deductionPercent) / 100));
+  return { net_weight_g, value };
+}

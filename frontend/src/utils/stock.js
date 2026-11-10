@@ -1,3 +1,6 @@
+// Where an item came from (items.source).
+export const ITEM_SOURCES = { purchase: 'Purchase', craft: 'Made by craftsman', opening: 'Opening stock', old_gold: 'Old gold' };
+
 // Labels for stock_movements rows, shared by the item Stock window and the Stock history page.
 export const MOVEMENT_TYPES = {
   purchase: 'Purchase',
@@ -5,6 +8,7 @@ export const MOVEMENT_TYPES = {
   craft_issue: 'To craftsman',
   craft_return: 'From craftsman',
   adjustment: 'Adjustment',
+  old_gold_in: 'Old gold taken in',
 };
 
 export const STOCK_REASONS = {
@@ -16,6 +20,7 @@ export const STOCK_REASONS = {
   lost: 'Lost / missing',
   other: 'Other',
   reversal: 'Reversed (undo)',
+  old_gold_cancel: 'Old gold given back',
 };
 
 // Which reasons make sense for adding vs taking out stock.
@@ -42,5 +47,6 @@ export function movementLabel(m) {
 export function movementLink(m) {
   if (m.ref_table === 'sales') return `/sales/${m.ref_id}`;
   if (m.ref_table === 'purchases') return `/purchases/${m.ref_id}`;
+  if (m.ref_table === 'old_gold_receipts') return `/old-gold/${m.ref_id}`;
   return null;
 }

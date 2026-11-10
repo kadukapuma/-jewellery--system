@@ -4,6 +4,7 @@ import {
   Box, Button, Card, Chip, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Table,
   TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
 } from '@mui/material';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
@@ -14,38 +15,21 @@ import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import RecordActions from '../../components/RecordActions';
 import { formatDateTime, formatMoney } from '../../utils/format';
-import { PAYMENT_METHODS } from '../../utils/payments';
+import { METHOD_LABELS } from '../../utils/payments';
 import ReceivePaymentDialog from './ReceivePaymentDialog';
 
 function CancelReceiptDialog({ payment, onClose, onDone }) {
-  const notify = useNotify();
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/customer-payments/${payment.id}/cancel`, { reason });
-      notify(`${payment.receipt_no} cancelled`);
-      onDone();
-    } catch (err) {
-      notify(errorMessage(err), 'error');
-      setBusy(false);
-    }
-  };
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {payment.receipt_no}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {formatMoney(payment.amount)} from {payment.customer_name || 'walk-in'}. The bills it paid will show as owed again.
-        </Typography>
-        <TextField label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Cheque bounced" />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep receipt</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy}>Cancel receipt</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`Cancel ${payment.receipt_no}`}
+      url={`/customer-payments/${payment.id}/cancel`}
+      intro={`${formatMoney(payment.amount)} from ${payment.customer_name || 'walk-in'}.`}
+      reasonPlaceholder="e.g. Cheque bounced"
+      keepText="Keep receipt"
+      confirmText="Cancel receipt"
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }
 
@@ -133,7 +117,7 @@ export default function CustomerPaymentsPage() {
                     {p.counter_invoice_no && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>with {p.counter_invoice_no}</Typography>}
                   </TableCell>
                   <TableCell>{p.customer_name || <Typography variant="body2" color="text.secondary">Walk-in</Typography>}</TableCell>
-                  <TableCell>{PAYMENT_METHODS[p.method]}{p.reference_no ? ` · ${p.reference_no}` : ''}</TableCell>
+                  <TableCell>{METHOD_LABELS[p.method]}{p.reference_no ? ` · ${p.reference_no}` : ''}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(p.amount)}</TableCell>
                   <TableCell align="right">{p.status === 'active' && p.unallocated > 0 ? formatMoney(p.unallocated) : '—'}</TableCell>
                   <TableCell>{p.status === 'cancelled' ? <Chip size="small" label="Cancelled" /> : <Chip size="small" color="success" variant="outlined" label="Active" />}</TableCell>

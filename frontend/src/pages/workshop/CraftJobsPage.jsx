@@ -4,6 +4,7 @@ import {
   MenuItem, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, Tooltip,
   Typography,
 } from '@mui/material';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
@@ -29,38 +30,16 @@ const STATUS = {
 };
 
 function CancelJobDialog({ job, onClose, onDone }) {
-  const notify = useNotify();
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/craft-jobs/${job.id}/cancel`, { reason });
-      notify(`${job.job_no} cancelled – ${formatWeight(job.issued_weight_g)} back from ${job.craftsman_name}`);
-      onDone();
-    } catch (err) {
-      notify(errorMessage(err), 'error');
-      setBusy(false);
-    }
-  };
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {job.job_no}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Use this when {job.craftsman_name} gives back all {formatWeight(job.issued_weight_g)} of gold.
-          {Number(job.held_gold_g) > 0 ? ` ${formatWeight(job.held_gold_g)} of it was gold he already had; that stays on his balance.` : ''}
-          {job.source_item_code ? ` ${job.source_item_code} goes back into stock.` : ''}
-          {job.job_type === 'rework' ? ` ${job.finished_item_code} goes back into stock as it was.` : ''}
-          {job.job_type === 'make_item' ? ` ${job.finished_item_code} stays saved, ready for another job.` : ''}
-        </Typography>
-        <TextField label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep job</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy}>Cancel job</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`Cancel ${job.job_no}`}
+      url={`/craft-jobs/${job.id}/cancel`}
+      intro={`Use this when ${job.craftsman_name} gives back all ${formatWeight(job.issued_weight_g)} of gold.${Number(job.held_gold_g) > 0 ? ` ${formatWeight(job.held_gold_g)} of it was gold he already had; that stays on his balance.` : ''}${job.job_type === 'make_item' ? ` ${job.finished_item_code} stays saved, ready for another job.` : ''}`}
+      keepText="Keep job"
+      confirmText="Cancel job"
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }
 

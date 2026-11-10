@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocatePayment, recomputePurchase } from './supplier-payments.service.js';
@@ -101,11 +102,13 @@ router.post('/', requirePermission('supplier_payments.create'), async (req, res)
 // Cancelling un-settles the purchases it paid; the record stays for the history.
 router.post('/:id/cancel', requirePermission('supplier_payments.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'supplier_payments', recordId: id }, async (conn, fx) => {
     const payment = await findPayment(conn, id);
     if (payment.status === 'cancelled') throw new HttpError(400, 'This payment is already cancelled');
     await assertDayOpen(conn, payment.payment_date);
+    await fx.watchSupplier(conn, payment.supplier_id);
+    await fx.watchPurchases(conn, payment.allocations.map((a) => a.purchase_id));
     await conn.query(
       "UPDATE supplier_payments SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE id = ?",
       [reason ? `Cancelled: ${reason}` : 'Cancelled', id],
@@ -120,7 +123,7 @@ router.post('/:id/cancel', requirePermission('supplier_payments.cancel'), async 
       newValues: { reason },
     });
   });
-  res.json(await findPayment(pool, id));
+  await sendCancel(res, outcome, () => findPayment(pool, id));
 });
 
 cancelledRecordRoutes(router, {

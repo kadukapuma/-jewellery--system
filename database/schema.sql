@@ -8,6 +8,10 @@ CREATE DATABASE IF NOT EXISTS jewellery_system
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE jewellery_system;
 
+-- Every table must be InnoDB: saves run in transactions (a failed save leaves nothing half done) and
+-- foreign keys are checked. Some MySQL installs default to MyISAM, which silently ignores both.
+SET default_storage_engine = InnoDB;
+
 -- =====================================================================
 -- USER MANAGEMENT & PERMISSIONS (role-based + per-user overrides)
 --   Effective permissions of a user =
@@ -286,7 +290,7 @@ CREATE TABLE items (
   name           VARCHAR(150) NOT NULL,
   category_id    INT UNSIGNED NOT NULL,
   karat_id       INT UNSIGNED NOT NULL,
-  source         ENUM('purchase','craft','opening') NOT NULL DEFAULT 'purchase',
+  source         ENUM('purchase','craft','opening','old_gold') NOT NULL DEFAULT 'purchase',
   net_weight_g   DECIMAL(10,3) NOT NULL,                -- actual weight of the piece (7.000)
   wastage_g      DECIMAL(10,3) NOT NULL DEFAULT 0,      -- charged to customer (1.000)
   making_charge  DECIMAL(14,2) NOT NULL DEFAULT 0,      -- labour charged to customer
@@ -450,7 +454,7 @@ CREATE TABLE sale_lines (
 CREATE TABLE stock_movements (
   id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   item_id              INT UNSIGNED NOT NULL,
-  movement_type        ENUM('purchase','sale','craft_issue','craft_return','adjustment') NOT NULL,
+  movement_type        ENUM('purchase','sale','craft_issue','craft_return','adjustment','old_gold_in') NOT NULL,
   qty_change           INT NOT NULL,                    -- +1 / -1
   weight_change_g      DECIMAL(10,3) NOT NULL,
   ref_table            VARCHAR(30) NULL,                -- 'purchases','sales','craft_jobs'
@@ -506,6 +510,58 @@ CREATE TABLE repair_orders (
   INDEX idx_rep_customer (customer_id)
 );
 
+-- ---------------------------------------------------------------------
+-- 15c. OLD GOLD - a customer's old jewellery bought by the shop: for cash, as credit on
+--      the customer's account, or in exchange on a bill. Each piece becomes a stock item.
+-- ---------------------------------------------------------------------
+CREATE TABLE old_gold_receipts (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  receipt_no           VARCHAR(30) NOT NULL UNIQUE,     -- OGR-000001
+  receipt_date         DATE NOT NULL,
+  customer_id          INT UNSIGNED NULL,               -- NULL only for a walk-in exchange or cash buy
+  mode                 ENUM('cash','credit','exchange') NOT NULL,
+  payout_method        ENUM('cash','bank_transfer') NULL, -- only for mode = cash
+  payout_reference     VARCHAR(50) NULL,
+  sale_id              INT UNSIGNED NULL,               -- the bill it was exchanged on
+  total_net_weight_g   DECIMAL(10,3) NOT NULL DEFAULT 0,
+  total_value          DECIMAL(14,2) NOT NULL DEFAULT 0,
+  status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+  notes                VARCHAR(255) NULL,
+  cancel_reason        VARCHAR(255) NULL,
+  created_by           INT UNSIGNED NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ogr_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+  CONSTRAINT fk_ogr_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
+  CONSTRAINT fk_ogr_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  INDEX idx_ogr_date (receipt_date),
+  INDEX idx_ogr_customer (customer_id)
+);
+
+CREATE TABLE old_gold_lines (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  receipt_id           INT UNSIGNED NOT NULL,
+  description          VARCHAR(150) NOT NULL,           -- Old chain, broken bangle ...
+  category_id          INT UNSIGNED NOT NULL,
+  karat_id             INT UNSIGNED NOT NULL,
+  gross_weight_g       DECIMAL(10,3) NOT NULL,
+  stone_weight_g       DECIMAL(10,3) NOT NULL DEFAULT 0,
+  net_weight_g         DECIMAL(10,3) NOT NULL,          -- gross - stones: the gold that is paid for
+  gold_price_id        INT UNSIGNED NOT NULL,
+  gram_rate            DECIMAL(14,2) NOT NULL,          -- day's gram price used
+  deduction_percent    DECIMAL(6,2) NOT NULL DEFAULT 0,
+  calc_value           DECIMAL(14,2) NOT NULL,          -- net x rate x (1 - deduction)
+  value                DECIMAL(14,2) NOT NULL,          -- what the customer got
+  item_id              INT UNSIGNED NULL,               -- stock item made from this piece
+  CONSTRAINT fk_ogl_receipt  FOREIGN KEY (receipt_id)    REFERENCES old_gold_receipts(id),
+  CONSTRAINT fk_ogl_category FOREIGN KEY (category_id)   REFERENCES categories(id),
+  CONSTRAINT fk_ogl_karat    FOREIGN KEY (karat_id)      REFERENCES karats(id),
+  CONSTRAINT fk_ogl_price    FOREIGN KEY (gold_price_id) REFERENCES gold_prices(id),
+  CONSTRAINT fk_ogl_item     FOREIGN KEY (item_id)       REFERENCES items(id),
+  CONSTRAINT chk_ogl_value   CHECK (value > 0),
+  INDEX idx_ogl_receipt (receipt_id)
+);
+
 -- =====================================================================
 -- PAYMENTS & CUSTOMER CREDIT
 --   Every rupee received from a customer is a customer_payments row
@@ -523,9 +579,10 @@ CREATE TABLE customer_payments (
   customer_id          INT UNSIGNED NULL,               -- NULL only for walk-in paid-in-full bills
   sale_id              INT UNSIGNED NULL,               -- set when taken at the counter with this bill
   repair_id            INT UNSIGNED NULL,               -- advance / payment for a customer repair
+  old_gold_id          INT UNSIGNED NULL,               -- credit for old gold taken in
   payment_date         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   amount               DECIMAL(14,2) NOT NULL,
-  method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
+  method               ENUM('cash','card','bank_transfer','cheque','old_gold') NOT NULL DEFAULT 'cash', -- old_gold = value of gold taken in, not money
   reference_no         VARCHAR(50) NULL,                -- card slip / cheque no / bank ref
   cheque_date          DATE NULL,
   notes                VARCHAR(255) NULL,
@@ -535,6 +592,7 @@ CREATE TABLE customer_payments (
   CONSTRAINT fk_cp_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
   CONSTRAINT fk_cp_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
   CONSTRAINT fk_cp_repair   FOREIGN KEY (repair_id)   REFERENCES repair_orders(id),
+  CONSTRAINT fk_cp_old_gold FOREIGN KEY (old_gold_id) REFERENCES old_gold_receipts(id),
   CONSTRAINT fk_cp_user     FOREIGN KEY (created_by)  REFERENCES users(id),
   CONSTRAINT chk_cp_amount  CHECK (amount > 0),
   INDEX idx_cp_customer (customer_id, payment_date)
@@ -821,7 +879,8 @@ INSERT INTO settings (setting_key, setting_value) VALUES
   ('invoice_footer', 'Thank you! Please keep this bill for exchanges.'),
   ('max_failed_logins', '5'),
   ('lock_minutes', '15'),
-  ('admin_only_changes', '1');               -- Danger Zone: only Admin edits / deletes directly
+  ('admin_only_changes', '1'),
+  ('old_gold_deduction_percent', '0');       -- taken off the day's rate when buying old gold               -- Danger Zone: only Admin edits / deletes directly
 
 -- Roles
 INSERT INTO roles (name, description, is_super_admin, is_system) VALUES
@@ -896,7 +955,10 @@ INSERT INTO permissions (code, module, action, description, sort_order) VALUES
   ('repairs.create',          'repairs',     'create',       'Take in a customer item for repair',       311),
   ('repairs.edit',            'repairs',     'edit',         'Give to a craftsman, receive back, change details', 312),
   ('repairs.deliver',         'repairs',     'deliver',      'Hand the item back and take payment',      313),
-  ('repairs.cancel',          'repairs',     'cancel',       'Cancel a repair',                          314);
+  ('repairs.cancel',          'repairs',     'cancel',       'Cancel a repair',                          314),
+  ('old_gold.view',           'old_gold',    'view',         'See old gold taken from customers',        320),
+  ('old_gold.create',         'old_gold',    'create',       'Buy / exchange a customer''s old gold',      321),
+  ('old_gold.cancel',         'old_gold',    'cancel',       'Cancel an old gold receipt',               322);
 
 -- Manager: everything except users, roles, settings and audit
 INSERT INTO role_permissions (role_id, permission_id)
@@ -913,7 +975,8 @@ WHERE r.name = 'Cashier'
                  'sales.view','sales.create','sales.reprint',
                  'customer_payments.view','customer_payments.create',
                  'instalments.view','tags.print',
-                 'repairs.view','repairs.create','repairs.deliver');
+                 'repairs.view','repairs.create','repairs.deliver',
+                 'old_gold.view','old_gold.create');
 
 -- Stock Keeper: items, purchases, craftsmen and jobs
 INSERT INTO role_permissions (role_id, permission_id)
@@ -957,6 +1020,7 @@ INSERT INTO document_sequences (code, prefix) VALUES
   ('EXP',  'EXP-'),   -- shop expenses
   ('CSH',  'CSH-'),   -- cash / bank entries
   ('REP',  'REP-'),   -- customer repairs
+  ('OGR',  'OGR-'),   -- old gold receipts
   ('ITEM', 'JW');     -- item barcodes: JW000001
 
 INSERT INTO expense_categories (name) VALUES

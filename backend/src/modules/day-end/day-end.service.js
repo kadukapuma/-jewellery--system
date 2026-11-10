@@ -81,7 +81,7 @@ async function receiptsSection(db, d) {
      LEFT JOIN customers c ON c.id = p.customer_id
      LEFT JOIN sales s ON s.id = p.sale_id
      LEFT JOIN repair_orders rp ON rp.id = p.repair_id
-     WHERE p.status = 'active' AND ${ON_DAY('p.payment_date')}
+     WHERE p.status = 'active' AND p.method <> 'old_gold' AND ${ON_DAY('p.payment_date')}
      ORDER BY p.payment_date, p.id`,
     [d, d, d, d],
   );
@@ -237,6 +237,39 @@ async function repairsSection(db, d) {
   };
 }
 
+// Customers' old gold taken in on the day: bought for cash, kept as credit, or exchanged on a bill.
+async function oldGoldSection(db, d) {
+  const [rows] = await db.query(
+    `SELECT g.id, g.receipt_no, g.mode, g.payout_method, COALESCE(c.name, 'Walk-in') AS customer, s.invoice_no,
+            g.total_net_weight_g, g.total_value,
+            (SELECT COUNT(*) FROM old_gold_lines l WHERE l.receipt_id = g.id) AS pieces
+     FROM old_gold_receipts g LEFT JOIN customers c ON c.id = g.customer_id LEFT JOIN sales s ON s.id = g.sale_id
+     WHERE g.status = 'active' AND g.receipt_date = ?
+     ORDER BY g.id`,
+    [d],
+  );
+  const [byKarat] = await db.query(
+    `SELECT k.name AS label, COUNT(*) AS pieces, SUM(l.net_weight_g) AS weight_g, SUM(l.value) AS amount
+     FROM old_gold_lines l JOIN old_gold_receipts g ON g.id = l.receipt_id JOIN karats k ON k.id = l.karat_id
+     WHERE g.status = 'active' AND g.receipt_date = ?
+     GROUP BY k.id ORDER BY k.sort_order, k.id`,
+    [d],
+  );
+  const list = num3(num2(rows, ['total_value']), ['total_net_weight_g']).map((r) => ({ ...r, pieces: Number(r.pieces) }));
+  const ofMode = (m) => round2(sum(list.filter((r) => r.mode === m), 'total_value'));
+  return {
+    totals: {
+      receipts: list.length,
+      pieces: sum(list, 'pieces'),
+      weight_g: round3(sum(list, 'total_net_weight_g')),
+      value: round2(sum(list, 'total_value')),
+      cash: ofMode('cash'), credit: ofMode('credit'), exchange: ofMode('exchange'),
+    },
+    by_karat: num3(num2(byKarat, ['amount']), ['weight_g']).map((r) => ({ ...r, pieces: Number(r.pieces) })),
+    list,
+  };
+}
+
 async function stockSection(db, d, showCost) {
   const [byType] = await db.query(
     `SELECT sm.movement_type AS label, COUNT(*) AS entries,
@@ -368,6 +401,7 @@ export async function buildDaySummary(db, date, { showCost = false } = {}) {
   const expenses = await expensesSection(db, date);
   const craftsmen = await craftsmenSection(db, date);
   const repairs = await repairsSection(db, date);
+  const oldGold = await oldGoldSection(db, date);
   const stock = await stockSection(db, date, showCost);
   const cash = await cashSection(db, date);
   const profit = showCost ? await profitSection(db, date, expenses.totals.total) : null;
@@ -382,6 +416,6 @@ export async function buildDaySummary(db, date, { showCost = false } = {}) {
       expected_cash: cash.accounts.cash.closing,
       net_profit: profit ? profit.net_profit : null,
     },
-    sales, receipts, purchases, expenses, craftsmen, repairs, stock, cash, profit,
+    sales, receipts, purchases, expenses, craftsmen, repairs, old_gold: oldGold, stock, cash, profit,
   };
 }

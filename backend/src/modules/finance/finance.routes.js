@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { dateSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { MONEY_FLOW_SQL, OWNER_KINDS, TRANSFER_KINDS, accountBalances } from './finance.service.js';
@@ -73,16 +74,17 @@ router.get('/overview', requirePermission('finance.view'), async (req, res) => {
     supplier_payments: sumKind('supplier_payment'),
     craftsman_payments: sumKind('craftsman_payment'),
     expenses: sumKind('expense'),
+    old_gold: sumKind('old_gold'),
     opening: sumKind('opening'),
     capital_in: sumKind('capital_in'),
     drawings: sumKind('drawing'),
     counts: {
       receipts: countKind('receipt'), supplier_payments: countKind('supplier_payment'),
-      craftsman_payments: countKind('craftsman_payment'), expenses: countKind('expense'),
+      craftsman_payments: countKind('craftsman_payment'), expenses: countKind('expense'), old_gold: countKind('old_gold'),
     },
   };
   totals.money_in = totals.receipts;
-  totals.money_out = round2(totals.supplier_payments + totals.craftsman_payments + totals.expenses);
+  totals.money_out = round2(totals.supplier_payments + totals.craftsman_payments + totals.expenses + totals.old_gold);
   totals.net = round2(totals.money_in - totals.money_out);
 
   const num = (rows, keys) => rows.map((r) => ({ ...r, ...Object.fromEntries(keys.map((k) => [k, round2(r[k])])) }));
@@ -177,8 +179,8 @@ router.post('/cash-entries', requirePermission('cash_entries.create'), async (re
 
 router.post('/cash-entries/:id/cancel', requirePermission('cash_entries.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'cash_entries', recordId: id }, async (conn) => {
     const entry = await findEntry(conn, id);
     if (entry.status === 'cancelled') throw new HttpError(400, 'This entry is already cancelled');
     await assertDayOpen(conn, entry.entry_date);
@@ -188,7 +190,7 @@ router.post('/cash-entries/:id/cancel', requirePermission('cash_entries.cancel')
     );
     await writeAudit(conn, req, { action: 'cancel', table: 'cash_entries', recordId: id, oldValues: { entry_no: entry.entry_no, amount: entry.amount }, newValues: { reason } });
   });
-  res.json(await findEntry(pool, id));
+  await sendCancel(res, outcome, () => findEntry(pool, id));
 });
 
 cancelledRecordRoutes(router, {

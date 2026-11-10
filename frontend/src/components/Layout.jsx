@@ -80,6 +80,7 @@ const NAV_CATEGORIES = [
           { label: 'New Sale', path: '/pos', perm: 'sales.create' },
           { label: 'Bills', path: '/sales', perm: 'sales.view' },
           { label: 'Receipts', path: '/customer-payments', perm: 'customer_payments.view' },
+          { label: 'Old Gold', path: '/old-gold', perm: 'old_gold.view' },
         ],
       },
       {

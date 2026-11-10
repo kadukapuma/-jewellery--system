@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { assertDayOpen } from '../../utils/dayLock.js';
+import { assertDayOpen, dbToday as dbTodayOf } from '../../utils/dayLock.js';
 import { z } from 'zod';
 import { pool, withTransaction } from '../../config/db.js';
 import { hasPermission, requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, idSchema, optionalText } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, grams, money, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { snapshot } from '../../utils/recycleBin.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
@@ -15,11 +16,15 @@ import { findCustomer } from '../customers/customers.routes.js';
 import {
   allocateCustomerPayment, applyCustomerAdvances, buildSchedule, recomputeSale,
 } from '../customer-payments/customer-payments.service.js';
+import {
+  cancelOldGoldReceipt, createOldGoldReceipt, oldGoldLinesSchema, priceOldGoldLines,
+} from '../old-gold/old-gold.service.js';
 
 const router = Router();
 
 const round2 = (n) => Math.round(n * 100) / 100;
 const round3 = (n) => Math.round(n * 1000) / 1000;
+const METHOD_NAMES = { cash: 'cash', card: 'card', bank_transfer: 'bank transfer', cheque: 'cheque' };
 
 const createSchema = z.object({
   customer_id: z.coerce.number().int().positive().optional().nullable(),
@@ -56,6 +61,8 @@ const createSchema = z.object({
   expected_total: z.coerce.number().optional().nullable(),
   // Use the customer's advance (unallocated payments) on this bill.
   use_advance: z.boolean().default(true),
+  // Customer's old gold taken in exchange: its value comes off this bill.
+  old_gold: z.object({ lines: oldGoldLinesSchema }).optional().nullable(),
 });
 
 const listSchema = z.object({
@@ -91,6 +98,10 @@ export async function findSale(db, id) {
      WHERE a.sale_id = ? AND p.status = 'active' ORDER BY p.payment_date, p.id`,
     [id, id],
   );
+  const [oldGold] = await db.query(
+    `SELECT id, receipt_no, total_net_weight_g, total_value, status FROM old_gold_receipts WHERE sale_id = ? ORDER BY id`,
+    [id],
+  );
   const [[plan]] = await db.query('SELECT * FROM instalment_plans WHERE sale_id = ?', [id]);
   let schedule = [];
   if (plan) {
@@ -103,6 +114,7 @@ export async function findSale(db, id) {
     ...sale,
     lines,
     payments: payments.map((p) => ({ ...p, at_counter: !!p.at_counter })),
+    old_gold: oldGold.map((g) => ({ ...g, total_net_weight_g: Number(g.total_net_weight_g), total_value: Number(g.total_value) })),
     instalment_plan: plan ? { ...plan, schedule: schedule.map((r) => ({ ...r, is_overdue: !!r.is_overdue })) } : null,
   };
 }
@@ -152,6 +164,7 @@ router.get('/:id', requirePermission('sales.view', 'sales.reprint'), async (req,
 router.post('/', requirePermission('sales.create'), async (req, res) => {
   const data = createSchema.parse(req.body);
   if (data.discount > 0 && !req.user.is_super_admin) throw new HttpError(403, 'Only an Admin can give a discount on the whole bill');
+  if (data.old_gold?.lines?.length && !hasPermission(req, 'old_gold.create')) throw new HttpError(403, 'You do not have permission to take old gold');
   const ids = data.lines.map((l) => l.item_id);
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'The same item is on the bill twice');
 
@@ -221,11 +234,23 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       throw new HttpError(409, `The gold price changed while you were billing. New total is ${total.toFixed(2)} — please check and save again.`, 'PRICE_CHANGED');
     }
 
-    // 3. Advance first (if chosen): money the customer already left with the shop comes off the bill.
+    // 3. Old gold taken in exchange comes off first. A walk-in cannot get more than the bill;
+    //    a customer's extra value stays with the shop as their advance.
+    let oldGoldValue = 0;
+    if (data.old_gold?.lines?.length) {
+      oldGoldValue = (await priceOldGoldLines(conn, data.old_gold.lines, req)).total_value;
+      if (!customer && oldGoldValue > total + 0.009) {
+        throw new HttpError(400, `The old gold (${oldGoldValue.toFixed(2)}) is worth more than the bill. Choose the customer to keep the rest as an advance, or buy it for cash from Old Gold.`);
+      }
+    }
+    const oldGoldUsed = round2(Math.min(oldGoldValue, total));
+    const oldGoldExtra = round2(oldGoldValue - oldGoldUsed);
+
+    // Then the advance (if chosen): money the customer already left with the shop comes off the bill.
     const advanceUsed = customer && data.use_advance
-      ? round2(Math.max(0, Math.min(Number(customer.advance_available) || 0, total)))
+      ? round2(Math.max(0, Math.min(Number(customer.advance_available) || 0, total - oldGoldUsed)))
       : 0;
-    const due = round2(total - advanceUsed); // what the customer pays now
+    const due = round2(total - oldGoldUsed - advanceUsed); // what the customer pays now
 
     // Payments: anything over what is due is change, given back from the cash.
     const payments = data.payments.map((p) => ({ ...p }));
@@ -238,7 +263,7 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       cash.amount = round2(cash.amount - change);
     }
     const paid = round2(Math.min(received, due));
-    const balance = round2(total - paid); // left after the counter payments
+    const balance = round2(total - oldGoldUsed - paid); // left after the old gold and counter payments
     const creditNeeded = round2(due - paid);
 
     // 4. Credit rules (only for what the advance doesn't cover).
@@ -285,6 +310,17 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       );
     }
 
+    let oldGoldReceipt = null;
+    if (oldGoldValue > 0) {
+      oldGoldReceipt = await createOldGoldReceipt(conn, req, {
+        date: await dbTodayOf(conn), customerId: customer?.id ?? null, mode: 'exchange', saleId, lines: data.old_gold.lines,
+        notes: `Exchanged on bill ${invoiceNo}`,
+      });
+      if (oldGoldUsed > 0) {
+        await conn.query('INSERT INTO customer_payment_allocations (payment_id, sale_id, amount) VALUES (?, ?, ?)', [oldGoldReceipt.payment_id, saleId, oldGoldUsed]);
+      }
+    }
+
     for (const p of payments.filter((x) => x.amount > 0)) {
       const receiptNo = await nextDocumentNumber(conn, 'RCP');
       const [pay] = await conn.query(
@@ -311,7 +347,7 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
 
     await recomputeSale(conn, saleId);
     // Money the customer left with the shop earlier now pays this bill (unless the cashier chose not to).
-    if (advanceUsed > 0) await applyCustomerAdvances(conn, customer.id);
+    if (advanceUsed > 0 || oldGoldExtra > 0) await applyCustomerAdvances(conn, customer.id);
 
     await writeAudit(conn, req, {
       action: 'create',
@@ -319,6 +355,7 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
       recordId: saleId,
       newValues: {
         invoice_no: invoiceNo, customer_id: customer?.id ?? null, total, discount, bill_discount: data.discount, paid, change, advance_used: advanceUsed,
+        old_gold: oldGoldReceipt ? { receipt_no: oldGoldReceipt.receipt_no, value: oldGoldValue, used: oldGoldUsed } : null,
         lines: lines.map((l) => ({ item: l.item.item_code, min: l.price_min, max: l.price_max, sold: l.line_total })),
       },
     });
@@ -332,8 +369,8 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
 // later payments that were put on it become the customer's advance again.
 router.post('/:id/cancel', requirePermission('sales.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = z.string().trim().min(1, 'Give a reason').max(255).parse(req.body?.reason ?? '');
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req, { required: true });
+  const outcome = await runCancel(req, { table: 'sales', recordId: id }, async (conn, fx) => {
     const sale = await findSale(conn, id);
     if (sale.status === 'cancelled') throw new HttpError(400, 'This bill is already cancelled');
     await assertDayOpen(conn, sale.sale_date);
@@ -343,6 +380,12 @@ router.post('/:id/cancel', requirePermission('sales.cancel'), async (req, res) =
       [id],
     );
     for (const p of payDays) await assertDayOpen(conn, p.d);
+    // Money freed from this bill may pay the customer's other open bills.
+    await fx.watchCustomer(conn, sale.customer_id);
+    if (sale.customer_id) {
+      const [open] = await conn.query("SELECT id FROM sales WHERE customer_id = ? AND status = 'completed' AND id <> ?", [sale.customer_id, id]);
+      await fx.watchSales(conn, open.map((s) => s.id));
+    }
 
     for (const l of sale.lines) {
       await conn.query("UPDATE items SET stock_qty = stock_qty + ?, status = 'in_stock' WHERE id = ?", [l.qty, l.item_id]);
@@ -351,9 +394,26 @@ router.post('/:id/cancel', requirePermission('sales.cancel'), async (req, res) =
          VALUES (?, 'adjustment', ?, ?, 'sales', ?, ?)`,
         [l.item_id, l.qty, l.net_weight_g, id, req.user.id],
       );
+      fx.add('stock', `${l.item_code} ${l.item_name}${l.qty > 1 ? ` × ${l.qty}` : ''} goes back into stock (${grams(l.net_weight_g)})`, '/items');
     }
+    // Old gold taken in exchange: a customer keeps its value as an advance; a walk-in gets the gold back.
+    const [oldGold] = await conn.query("SELECT * FROM old_gold_receipts WHERE sale_id = ? AND status = 'active' FOR UPDATE", [id]);
+    if (!sale.customer_id) {
+      for (const g of oldGold) await cancelOldGoldReceipt(conn, req, g, `Bill ${sale.invoice_no} cancelled`, fx);
+    } else {
+      for (const g of oldGold) fx.add('old_gold', `Old gold ${g.receipt_no} (${money(g.total_value)}) stays with the shop as the customer's advance`, `/old-gold/${g.id}`);
+    }
+    const [refunds] = await conn.query(
+      "SELECT receipt_no, amount, method FROM customer_payments WHERE sale_id = ? AND status = 'active' AND method <> 'old_gold' ORDER BY id",
+      [id],
+    );
+    for (const p of refunds) fx.add('receipt', `Receipt ${p.receipt_no} is cancelled: give back ${money(p.amount)} (${METHOD_NAMES[p.method] || p.method})`, '/customer-payments');
+    for (const p of sale.payments.filter((x) => !x.at_counter)) {
+      fx.add('receipt', `Receipt ${p.receipt_no}: ${money(p.amount)} paid on this bill later is no longer on it and becomes the customer's advance`, '/customer-payments');
+    }
+    if (sale.instalment_plan && sale.instalment_plan.status !== 'cancelled') fx.add('bill', 'The instalment plan of this bill is cancelled');
     await conn.query(
-      "UPDATE customer_payments SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE sale_id = ? AND status = 'active'",
+      "UPDATE customer_payments SET status = 'cancelled', notes = CONCAT_WS(' · ', notes, ?) WHERE sale_id = ? AND status = 'active' AND method <> 'old_gold'",
       [`Refunded: bill ${sale.invoice_no} cancelled`, id],
     );
     await conn.query('DELETE FROM customer_payment_allocations WHERE sale_id = ?', [id]);
@@ -363,7 +423,7 @@ router.post('/:id/cancel', requirePermission('sales.cancel'), async (req, res) =
     await applyCustomerAdvances(conn, sale.customer_id);
     await writeAudit(conn, req, { action: 'cancel', table: 'sales', recordId: id, oldValues: { invoice_no: sale.invoice_no, total: sale.total }, newValues: { reason } });
   });
-  res.json(presentSale(await findSale(pool, id), req));
+  await sendCancel(res, outcome, async () => presentSale(await findSale(pool, id), req));
 });
 
 // Bills: only the due date and notes can change (items and money: cancel and make a new bill).
@@ -380,9 +440,13 @@ cancelledRecordRoutes(router, {
       [sale.id, [0, ...payments.map((p) => p.id)]],
     );
     if (n > 0) throw new HttpError(400, 'A payment is still applied to this bill. Cancel it first.');
+    const oldGold = await snapshot(conn, 'old_gold_receipts', 'sale_id = ?', [sale.id]);
+    if (oldGold.some((g) => g.status !== 'cancelled')) throw new HttpError(400, 'Old gold taken on this bill is still active. Cancel it first.');
     const plans = await snapshot(conn, 'instalment_plans', 'sale_id = ?', [sale.id]);
     return [
       { table: 'sale_lines', rows: await snapshot(conn, 'sale_lines', 'sale_id = ?', [sale.id]) },
+      { table: 'old_gold_receipts', rows: oldGold },
+      { table: 'old_gold_lines', rows: oldGold.length ? await snapshot(conn, 'old_gold_lines', 'receipt_id IN (?)', [oldGold.map((g) => g.id)]) : [] },
       { table: 'customer_payments', rows: payments },
       { table: 'instalment_plans', rows: plans },
       { table: 'instalment_schedule', rows: plans.length ? await snapshot(conn, 'instalment_schedule', 'plan_id IN (?)', [plans.map((p) => p.id)]) : [] },

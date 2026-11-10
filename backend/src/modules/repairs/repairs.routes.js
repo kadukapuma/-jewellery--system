@@ -6,6 +6,7 @@ import { HttpError, parseId } from '../../utils/httpError.js';
 import { PAYMENT_METHODS, dateSchema, gramsSchema, optionalText } from '../../utils/validation.js';
 import { assertDayOpen } from '../../utils/dayLock.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, grams, money as fmtMoney, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { goldHeldOfKarat } from '../craftsmen/craftsmen.gold.js';
 
@@ -322,23 +323,30 @@ router.post('/:id/payments', requirePermission('repairs.deliver'), async (req, r
 // Advances stay with the shop as the customer's money; cancel the receipt to refund it.
 router.post('/:id/cancel', requirePermission('repairs.cancel'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'repair_orders', recordId: id }, async (conn, fx) => {
     const repair = await findRepair(conn, id, true);
     if (!['received', 'with_craftsman'].includes(repair.status)) {
       throw new HttpError(400, repair.status === 'ready' ? 'It is already repaired; hand it over instead' : `${repair.repair_no} is already ${repair.status}`);
     }
     const [[{ today }]] = await conn.query('SELECT CURDATE() AS today');
     await assertDayOpen(conn, today);
+    await fx.watchCustomer(conn, repair.customer_id);
     if (repair.status === 'with_craftsman') {
+      await fx.watchCraftsman(conn, repair.craftsman_id);
+      fx.add('craftsman', `Get the item back from ${repair.craftsman_name}${Number(repair.extra_gold_g) > 0 ? `, with the ${grams(repair.extra_gold_g)} of shop gold given for it` : ''}`, '/craftsmen');
       const extra = Number(repair.extra_gold_g);
       await goldLedger(conn, req, repair, 'gold_returned', -extra, today, `Repair ${repair.repair_no} cancelled`);
       await goldLedger(conn, req, repair, 'held_used', Number(repair.held_gold_g), today, 'Repair cancelled: held gold back on balance');
     }
+    fx.add('gold', `Give ${repair.customer_name} their item back (${repair.item_description}, ${grams(repair.weight_in_g)} when taken in)`);
+    if (repair.paid_amount > 0) {
+      fx.add('receipt', `${fmtMoney(repair.paid_amount)} paid for this repair stays as the customer's advance. To give it back, cancel the receipt in Receipts.`, '/customer-payments');
+    }
     await conn.query("UPDATE repair_orders SET status = 'cancelled', cancel_reason = ? WHERE id = ?", [reason, id]);
     await writeAudit(conn, req, { action: 'cancel', table: 'repair_orders', recordId: id, newValues: { reason } });
   });
-  res.json(await findRepairFull(pool, id));
+  await sendCancel(res, outcome, () => findRepairFull(pool, id));
 });
 
 export default router;

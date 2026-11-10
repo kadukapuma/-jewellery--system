@@ -3,7 +3,7 @@ import StatCard from '../../components/StatCard';
 import BarChart from '../../components/BarChart';
 import { formatAmount, formatDate, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
-import { PAYMENT_METHODS } from '../../utils/payments';
+import { METHOD_LABELS } from '../../utils/payments';
 import { downloadCsv } from '../../utils/csv';
 import { ReportTable, CsvButton } from './ReportParts';
 
@@ -74,13 +74,13 @@ export default function SalesReport({ data }) {
             title="Money received, by payment method"
             rows={data.by_method}
             columns={[
-              { label: 'Method', render: (r) => PAYMENT_METHODS[r.label] },
+              { label: 'Method', render: (r) => METHOD_LABELS[r.label] },
               { label: 'Receipts', align: 'right', render: (r) => r.receipts },
               { label: 'Amount', align: 'right', render: (r) => formatMoney(r.amount) },
             ]}
             footer={['Total', data.by_method.reduce((s, r) => s + r.receipts, 0), formatMoney(data.by_method.reduce((s, r) => s + r.amount, 0))]}
             onCsv={() => downloadCsv(file('money_received'), [
-              { label: 'Method', value: (r) => PAYMENT_METHODS[r.label] }, { label: 'Receipts', value: (r) => r.receipts }, { label: 'Amount', value: (r) => r.amount },
+              { label: 'Method', value: (r) => METHOD_LABELS[r.label] }, { label: 'Receipts', value: (r) => r.receipts }, { label: 'Amount', value: (r) => r.amount },
             ], data.by_method)}
           />
         </Grid>

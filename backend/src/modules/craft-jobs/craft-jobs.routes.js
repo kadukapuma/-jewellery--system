@@ -6,6 +6,7 @@ import { requirePermission } from '../../middleware/auth.js';
 import { HttpError, parseId } from '../../utils/httpError.js';
 import { checkPriceRange, dateSchema, gramsSchema, optionalText, priceRangeFields } from '../../utils/validation.js';
 import { writeAudit } from '../../utils/audit.js';
+import { cancelReason, grams, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { snapshot } from '../../utils/recycleBin.js';
 import { adminApproval } from '../../utils/changeGuard.js';
@@ -359,32 +360,41 @@ router.post('/:id/complete', requirePermission('craft_jobs.complete'), async (re
 // The job is called off and the craftsman gives all the gold back.
 router.post('/:id/cancel', requirePermission('craft_jobs.delete'), async (req, res) => {
   const id = parseId(req.params.id);
-  const reason = optionalText(255).parse(req.body?.reason);
-  await withTransaction(async (conn) => {
+  const reason = cancelReason(req);
+  const outcome = await runCancel(req, { table: 'craft_jobs', recordId: id }, async (conn, fx) => {
     const job = await findJob(conn, id, true);
     if (job.status !== 'issued') throw new HttpError(400, `${job.job_no} is already ${job.status}`);
     const [[{ today }]] = await conn.query('SELECT CURDATE() AS today');
     await assertDayOpen(conn, today);
+    await fx.watchCraftsman(conn, job.craftsman_id);
+    fx.add('craftsman', `Get the ${grams(job.issued_weight_g)} of gold given for ${job.job_no} back from the craftsman`, '/craftsmen');
     await ledger(conn, req, job, 'gold_returned', -Number(job.issued_weight_g), today, reason ? `Job cancelled: ${reason}` : 'Job cancelled');
     // Gold he already had stays with him, back on his balance.
     const held = Number(job.held_gold_g);
     await ledger(conn, req, job, 'held_used', held, today, 'Job cancelled: held gold back on balance');
+    const itemName = async (itemId) => {
+      const [[i]] = await conn.query('SELECT item_code, name FROM items WHERE id = ?', [itemId]);
+      return i ? `${i.item_code} ${i.name}` : 'The item';
+    };
     if (job.source_item_id) {
       await conn.query("UPDATE items SET stock_qty = stock_qty + 1, status = 'in_stock' WHERE id = ?", [job.source_item_id]);
       await moveStock(conn, req, job.source_item_id, 'adjustment', 1, round3(Number(job.issued_weight_g) - held), id);
+      fx.add('stock', `${await itemName(job.source_item_id)} (the gold given from stock) goes back into stock`, '/items');
     }
     if (job.job_type === 'rework') {
       // The piece comes back as it was.
       await conn.query("UPDATE items SET stock_qty = 1, status = 'in_stock' WHERE id = ?", [job.item_id]);
       await moveStock(conn, req, job.item_id, 'adjustment', 1, Number(job.item_weight_g), id);
+      fx.add('stock', `${await itemName(job.item_id)} goes back into stock as it was`, '/items');
     } else if (job.job_type === 'make_item') {
       // Jobs given before items stayed as they are marked the item "with craftsman"; free it again.
-      await conn.query("UPDATE items SET status = 'in_stock' WHERE id = ? AND status = 'with_craftsman'", [job.item_id]);
+      const [r] = await conn.query("UPDATE items SET status = 'in_stock' WHERE id = ? AND status = 'with_craftsman'", [job.item_id]);
+      if (r.affectedRows) fx.add('stock', `${await itemName(job.item_id)} is no longer marked "with craftsman"`, '/items');
     }
     await conn.query("UPDATE craft_jobs SET status = 'cancelled' WHERE id = ?", [id]);
     await writeAudit(conn, req, { action: 'cancel', table: 'craft_jobs', recordId: id, newValues: { reason } });
   });
-  res.json(await findJob(pool, id));
+  await sendCancel(res, outcome, () => findJob(pool, id));
 });
 
 // A cancelled job can be deleted with its gold entries, as long as they cancel each other out

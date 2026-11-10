@@ -3,6 +3,7 @@ import {
   Alert, Box, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, MenuItem, Switch,
   Typography,
 } from '@mui/material';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import FormSection from '../../components/FormSection';
 import TextField from '../../components/TextField';
@@ -470,30 +471,15 @@ export function RepairPaymentDialog({ repair, onClose, onSaved }) {
 }
 
 export function CancelRepairDialog({ repair, onClose, onDone }) {
-  const notify = useNotify();
-  const f = useForm({ reason: '' });
-  const save = () => f.submit(async () => {
-    await api.post(`/repairs/${repair.id}/cancel`, { reason: f.form.reason });
-    notify(`${repair.repair_no} cancelled`);
-    onDone();
-  });
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {repair.repair_no}</DialogTitle>
-      <DialogContent>
-        {f.error && <Alert severity="error" sx={{ mb: 2 }}>{f.error}</Alert>}
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          The item goes back to {repair.customer_name} without repair.
-          {repair.status === 'with_craftsman' && ` Get it back from ${repair.craftsman_name} first.`}
-          {Number(repair.extra_gold_g) > 0 && ` The ${formatWeight(repair.extra_gold_g)} of shop gold comes back from him.`}
-          {repair.paid_amount > 0 && ` The advance of ${formatMoney(repair.paid_amount)} becomes the customer’s advance for the next bill; to give it back, cancel its receipt.`}
-        </Typography>
-        {f.field('reason', 'Reason', { autoFocus: true })}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep repair</Button>
-        <Button variant="contained" color="error" onClick={save} disabled={f.busy}>Cancel repair</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`Cancel ${repair.repair_no}`}
+      url={`/repairs/${repair.id}/cancel`}
+      intro={`The item goes back to ${repair.customer_name} without repair.`}
+      keepText="Keep repair"
+      confirmText="Cancel repair"
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }

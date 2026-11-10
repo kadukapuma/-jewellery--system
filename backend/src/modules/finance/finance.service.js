@@ -1,6 +1,7 @@
 // Every rupee that moved in or out of the shop, one row per movement, from all the tables that hold money:
 //   txn_date, kind, ref_id, ref_no, party, method, account ('cash' | 'bank'), direction (+1 in / -1 out), amount
 // Paid in cash -> Cash account; card, bank transfer and cheque -> Bank account.
+// Old gold taken as credit / exchange (method 'old_gold') is not money and is left out; old gold bought for cash is money out.
 // A cash <-> bank transfer is two rows (out of one account, into the other).
 const ACCOUNT_OF = (col) => `CASE ${col} WHEN 'cash' THEN 'cash' ELSE 'bank' END`;
 
@@ -8,7 +9,11 @@ export const MONEY_FLOW_SQL = `
   SELECT DATE(p.payment_date) AS txn_date, 'receipt' AS kind, p.id AS ref_id, p.receipt_no AS ref_no,
          COALESCE(c.name, 'Walk-in') AS party, p.method, ${ACCOUNT_OF('p.method')} AS account, 1 AS direction, p.amount
   FROM customer_payments p LEFT JOIN customers c ON c.id = p.customer_id
-  WHERE p.status = 'active'
+  WHERE p.status = 'active' AND p.method <> 'old_gold'
+  UNION ALL
+  SELECT g.receipt_date, 'old_gold', g.id, g.receipt_no, COALESCE(c.name, 'Walk-in'), g.payout_method, ${ACCOUNT_OF('g.payout_method')}, -1, g.total_value
+  FROM old_gold_receipts g LEFT JOIN customers c ON c.id = g.customer_id
+  WHERE g.status = 'active' AND g.mode = 'cash'
   UNION ALL
   SELECT p.payment_date, 'supplier_payment', p.id, p.payment_no, s.name, p.method, ${ACCOUNT_OF('p.method')}, -1, p.amount
   FROM supplier_payments p JOIN suppliers s ON s.id = p.supplier_id

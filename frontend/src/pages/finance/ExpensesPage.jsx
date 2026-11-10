@@ -6,6 +6,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import CancelIcon from '@mui/icons-material/CancelOutlined';
 import CategoryIcon from '@mui/icons-material/CategoryOutlined';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import TextField from '../../components/TextField';
 import api, { errorMessage } from '../../api/client';
@@ -19,34 +20,17 @@ import ExpenseDialog from './ExpenseDialog';
 import ExpenseCategoriesDialog from './ExpenseCategoriesDialog';
 
 function CancelExpenseDialog({ expense, onClose, onDone }) {
-  const notify = useNotify();
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/expenses/${expense.id}/cancel`, { reason });
-      notify(`${expense.expense_no} cancelled`);
-      onDone();
-    } catch (err) {
-      notify(errorMessage(err), 'error');
-      setBusy(false);
-    }
-  };
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Cancel {expense.expense_no}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {formatMoney(expense.amount)} for {expense.category_name}. The money goes back into {expense.method === 'cash' ? 'cash in hand' : 'the bank'}.
-        </Typography>
-        <TextField label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Entered twice" />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep expense</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy}>Cancel expense</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`Cancel ${expense.expense_no}`}
+      url={`/expenses/${expense.id}/cancel`}
+      intro={`${formatMoney(expense.amount)} for ${expense.category_name}.`}
+      reasonPlaceholder="e.g. Entered twice"
+      keepText="Keep expense"
+      confirmText="Cancel expense"
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }
 

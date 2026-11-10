@@ -22,6 +22,8 @@ import CraftJobsPage from './pages/workshop/CraftJobsPage';
 import CraftsmenPage from './pages/workshop/CraftsmenPage';
 import RepairsPage from './pages/repairs/RepairsPage';
 import RepairSlipPage from './pages/repairs/RepairSlipPage';
+import OldGoldPage from './pages/old-gold/OldGoldPage';
+import OldGoldSlipPage from './pages/old-gold/OldGoldSlipPage';
 import PosPage from './pages/sales/PosPage';
 import SalesPage from './pages/sales/SalesPage';
 import InvoicePage from './pages/sales/InvoicePage';
@@ -58,6 +60,8 @@ export default function App() {
           <Route path="craft-jobs" element={<RequirePermission perm="craft_jobs.view"><CraftJobsPage /></RequirePermission>} />
           <Route path="repairs" element={<RequirePermission perm="repairs.view"><RepairsPage /></RequirePermission>} />
           <Route path="repairs/:id" element={<RequirePermission perm="repairs.view"><RepairSlipPage /></RequirePermission>} />
+          <Route path="old-gold" element={<RequirePermission perm="old_gold.view"><OldGoldPage /></RequirePermission>} />
+          <Route path="old-gold/:id" element={<RequirePermission perm="old_gold.view"><OldGoldSlipPage /></RequirePermission>} />
           <Route path="craftsmen" element={<RequirePermission perm="craftsmen.view"><CraftsmenPage /></RequirePermission>} />
           <Route path="pos" element={<RequirePermission perm="sales.create"><PosPage /></RequirePermission>} />
           <Route path="sales" element={<RequirePermission perm="sales.view"><SalesPage /></RequirePermission>} />

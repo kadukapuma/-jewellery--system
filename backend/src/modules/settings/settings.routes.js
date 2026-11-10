@@ -15,6 +15,7 @@ const EDITABLE = {
   invoice_footer: z.string().trim().max(200),
   max_failed_logins: z.coerce.number().int().min(3).max(20).transform(String),
   lock_minutes: z.coerce.number().int().min(1).max(1440).transform(String),
+  old_gold_deduction_percent: z.coerce.number({ error: 'Enter a %' }).min(0, 'Cannot be negative').max(50, 'At most 50%').transform(String),
 };
 
 // Shop details printed on bills - any logged-in user needs these.

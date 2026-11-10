@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Grid, LinearProgress, TextField, Typography } from '@mui/material';
 import StorefrontIcon from '@mui/icons-material/StorefrontOutlined';
 import LockIcon from '@mui/icons-material/LockOutlined';
+import RecyclingIcon from '@mui/icons-material/Recycling';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import PageHeader from '../../components/PageHeader';
 import SectionCard from '../../components/SectionCard';
 
-const KEYS = ['shop_name', 'shop_address', 'shop_phone', 'invoice_footer', 'max_failed_logins', 'lock_minutes'];
+const KEYS = ['shop_name', 'shop_address', 'shop_phone', 'invoice_footer', 'max_failed_logins', 'lock_minutes', 'old_gold_deduction_percent'];
 
 export default function SettingsPage() {
   const notify = useNotify();
@@ -84,6 +85,14 @@ export default function SettingsPage() {
                 </Typography>
               </Box>
             </SectionCard>
+            <Box sx={{ mt: 2.5 }}>
+              <SectionCard icon={<RecyclingIcon fontSize="small" />} title="Old gold">
+                {field('old_gold_deduction_percent', "Deduction from the day's rate (%)", {
+                  type: 'number', inputProps: { min: 0, max: 50, step: 0.5 },
+                  helperText: "Old gold is valued at net weight × today's gram price, less this %. 0 – 50",
+                })}
+              </SectionCard>
+            </Box>
           </Grid>
         </Grid>
       )}

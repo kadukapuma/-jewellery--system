@@ -18,6 +18,9 @@ import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { gold, stone } from '../../theme';
 import CustomerPicker from './CustomerPicker';
 import ItemPickerDialog from './ItemPickerDialog';
+import RecyclingIcon from '@mui/icons-material/Recycling';
+import { OldGoldExchangeDialog } from '../old-gold/OldGoldDialog';
+import { linesBody, priceLine as priceOldGold, totalOf as oldGoldTotal, useOldGoldSetup } from '../old-gold/OldGoldLines';
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -69,6 +72,9 @@ export default function PosPage() {
   const [customer, setCustomer] = useState(null);
   const [discount, setDiscount] = useState('');
   const [useAdvance, setUseAdvance] = useState(true);
+  const [oldGold, setOldGold] = useState([]); // pieces taken in exchange (saved with the bill)
+  const [editingOldGold, setEditingOldGold] = useState(false);
+  const { setup: oldGoldSetup } = useOldGoldSetup();
   const [payments, setPayments] = useState([newPayment()]);
   const [credit, setCredit] = useState({ due_date: '', useInstalments: false, count: 3, frequency: 'monthly', start_date: todayYmd() });
   const [error, setError] = useState('');
@@ -101,11 +107,16 @@ export default function PosPage() {
   const discountTotal = round2(subtotal - total);
   const hasPriceError = lines.some((l) => l.problem?.level === 'error');
   const received = round2(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0));
-  // The customer's advance (money already with the shop) comes off the bill first, if ticked.
+  // Old gold taken in exchange comes off first. A walk-in cannot get more than the bill;
+  // a customer's extra stays with the shop as their advance.
+  const oldGoldSum = oldGoldTotal(oldGold, oldGoldSetup);
+  const oldGoldUsed = round2(Math.min(oldGoldSum.value, total));
+  const oldGoldExtra = round2(oldGoldSum.value - oldGoldUsed);
+  // Then the customer's advance (money already with the shop), if ticked.
   const advance = customer ? Math.max(0, Number(customer.advance_available) || 0) : 0;
-  const advanceUsed = useAdvance ? round2(Math.min(advance, total)) : 0;
+  const advanceUsed = useAdvance ? round2(Math.min(advance, total - oldGoldUsed)) : 0;
   const advanceLeft = round2(advance - advanceUsed);
-  const toPay = round2(total - advanceUsed); // final amount the customer pays now
+  const toPay = round2(total - oldGoldUsed - advanceUsed); // final amount the customer pays now
   const change = received > toPay ? round2(received - toPay) : 0;
   const balance = received < toPay ? round2(toPay - received) : 0;
   const rates = [...new Map(lines.map((l) => [l.item.karat_name, l.item.current_gram_price])).entries()];
@@ -176,6 +187,7 @@ export default function PosPage() {
     if (!cart.length) { setError('Scan at least one item'); return; }
     if (hasPriceError) { setError('Fix the prices marked in red'); return; }
     if (balance > 0 && !customer) { setError('The bill is not fully paid. Choose a customer to give credit, or take the full amount.'); return; }
+    if (oldGoldExtra > 0 && !customer) { setError('The old gold is worth more than the bill. Choose the customer to keep the rest as an advance.'); return; }
     setBusy(true);
     try {
       const res = await api.post('/sales', {
@@ -187,8 +199,9 @@ export default function PosPage() {
         instalments: balance > 0 && credit.useInstalments ? { count: Number(credit.count), frequency: credit.frequency, start_date: credit.start_date } : null,
         expected_total: total,
         use_advance: advanceUsed > 0,
+        old_gold: oldGold.length ? { lines: linesBody(oldGold) } : null,
       });
-      notify(`Bill ${res.data.invoice_no} saved${advanceUsed > 0 ? ` · advance used ${formatMoney(advanceUsed)}` : ''}${res.data.change ? ` · give change ${formatMoney(res.data.change)}` : ''}`);
+      notify(`Bill ${res.data.invoice_no} saved${oldGoldUsed > 0 ? ` · old gold ${formatMoney(oldGoldUsed)}` : ''}${advanceUsed > 0 ? ` · advance used ${formatMoney(advanceUsed)}` : ''}${res.data.change ? ` · give change ${formatMoney(res.data.change)}` : ''}`);
       navigate(`/sales/${res.data.id}`, { state: { justCreated: true, change: res.data.change } });
     } catch (err) {
       setError(errorMessage(err));
@@ -343,6 +356,41 @@ export default function PosPage() {
             )}
           </Card>
 
+          {can('old_gold.create') && oldGoldSetup && (
+            <Card sx={{ p: 2.5, mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <RecyclingIcon fontSize="small" sx={{ color: gold[700] }} />
+                <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>Old gold exchange</Typography>
+                {oldGold.length > 0 && <Button size="small" color="inherit" onClick={() => setOldGold([])}>Remove</Button>}
+                <Button size="small" variant={oldGold.length ? 'text' : 'outlined'} onClick={() => setEditingOldGold(true)}>
+                  {oldGold.length ? 'Change' : 'Add old gold'}
+                </Button>
+              </Box>
+              {oldGold.length > 0 ? (
+                <Box sx={{ mt: 1 }}>
+                  {oldGold.map((l, i) => {
+                    const p = priceOldGold(l, oldGoldSetup);
+                    return (
+                      <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+                        <Typography variant="body2" color="text.secondary">{l.description} · {p.karatName} · {formatWeight(p.net)}</Typography>
+                        <Typography variant="body2">{formatMoney(p.value)}</Typography>
+                      </Box>
+                    );
+                  })}
+                  {oldGoldExtra > 0 && (
+                    <Alert severity={customer ? 'info' : 'warning'} sx={{ mt: 1 }}>
+                      {customer
+                        ? `${formatMoney(oldGoldExtra)} more than the bill stays as ${customer.name}'s advance.`
+                        : `Worth ${formatMoney(oldGoldExtra)} more than the bill. Choose the customer to keep it as an advance.`}
+                    </Alert>
+                  )}
+                </Box>
+              ) : (
+                <Typography variant="caption" color="text.secondary">The customer&apos;s old gold, valued at today&apos;s rate, comes off this bill</Typography>
+              )}
+            </Card>
+          )}
+
           <Box sx={{ bgcolor: gold[700], color: '#fff', borderRadius: '28px', p: 3, mb: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
               <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Subtotal ({lines.reduce((s, l) => s + l.qty, 0)} pcs)</Typography>
@@ -363,16 +411,24 @@ export default function PosPage() {
               </Box>
             )}
             <Divider sx={{ borderColor: 'rgba(255,255,255,.25)', my: 1.5 }} />
-            {advanceUsed > 0 ? (
+            {advanceUsed > 0 || oldGoldUsed > 0 ? (
               <>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Total</Typography>
                   <Typography sx={{ fontWeight: 600 }}>{formatMoney(total)}</Typography>
                 </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Advance</Typography>
-                  <Typography sx={{ fontWeight: 600 }}>− {formatMoney(advanceUsed)}</Typography>
-                </Box>
+                {oldGoldUsed > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Old gold ({formatWeight(oldGoldSum.net)})</Typography>
+                    <Typography sx={{ fontWeight: 600 }}>− {formatMoney(oldGoldUsed)}</Typography>
+                  </Box>
+                )}
+                {advanceUsed > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Advance</Typography>
+                    <Typography sx={{ fontWeight: 600 }}>− {formatMoney(advanceUsed)}</Typography>
+                  </Box>
+                )}
                 {advanceLeft > 0 && (
                   <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.7)' }}>Advance left after this bill: {formatMoney(advanceLeft)}</Typography>
                 )}
@@ -464,6 +520,10 @@ export default function PosPage() {
           </Button>
         </Box>
       </Grid>
+      {editingOldGold && (
+        <OldGoldExchangeDialog initial={oldGold} setup={oldGoldSetup} onClose={() => setEditingOldGold(false)}
+          onDone={(next) => { setOldGold(next); setEditingOldGold(false); }} />
+      )}
       {picking && (
         <ItemPickerDialog inCart={new Set(cart.map((c) => c.item.id))} onClose={() => setPicking(false)} onAdd={addPicked} />
       )}

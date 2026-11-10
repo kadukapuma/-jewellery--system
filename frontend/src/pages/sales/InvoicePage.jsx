@@ -4,6 +4,7 @@ import {
   Alert, Box, Button, Chip, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
+import CancelDialog from '../../components/CancelDialog';
 import Dialog from '../../components/Dialog';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PrintIcon from '@mui/icons-material/PrintOutlined';
@@ -16,7 +17,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
 import { formatDate, formatDateTime, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
-import { PAYMENT_METHODS, PAYMENT_STATUS } from '../../utils/payments';
+import { METHOD_LABELS, PAYMENT_STATUS } from '../../utils/payments';
 import RecordActions from '../../components/RecordActions';
 import ReceivePaymentDialog from './ReceivePaymentDialog';
 
@@ -33,38 +34,19 @@ const PRINT_CSS = `
 
 // correcting: "Correct bill" - cancel, then open the same items at the counter to make the right bill.
 function CancelSaleDialog({ sale, correcting, onClose, onDone }) {
-  const notify = useNotify();
-  const [reason, setReason] = useState(correcting ? 'Corrected - wrong items or price' : '');
-  const [busy, setBusy] = useState(false);
-  const cancel = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/sales/${sale.id}/cancel`, { reason });
-      notify(`${sale.invoice_no} cancelled`);
-      onDone();
-    } catch (err) {
-      notify(errorMessage(err), 'error');
-      setBusy(false);
-    }
-  };
-  const atCounter = sale.payments.filter((p) => p.at_counter).reduce((s, p) => s + Number(p.amount), 0);
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{correcting ? 'Correct' : 'Cancel'} {sale.invoice_no}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {correcting && 'Bills cannot be changed once saved, so this bill is cancelled and its items open at the counter for the right bill. '}
-          The items go back into stock.
-          {atCounter > 0 && ` Refund ${formatMoney(atCounter)} paid with this bill.`}
-          {sale.payments.some((p) => !p.at_counter) && ' Later payments on this bill become the customer’s advance.'}
-        </Typography>
-        <TextField label="Reason" required autoFocus value={reason} onChange={(e) => setReason(e.target.value)} />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Keep bill</Button>
-        <Button variant="contained" color="error" onClick={cancel} disabled={busy || !reason.trim()}>{correcting ? 'Cancel and open at counter' : 'Cancel bill'}</Button>
-      </DialogActions>
-    </Dialog>
+    <CancelDialog
+      title={`${correcting ? 'Correct' : 'Cancel'} ${sale.invoice_no}`}
+      url={`/sales/${sale.id}/cancel`}
+      intro={correcting ? 'Bills cannot be changed once saved, so this bill is cancelled and its items open at the counter for the right bill.' : null}
+      reasonRequired
+      defaultReason={correcting ? 'Corrected - wrong items or price' : ''}
+      keepText="Keep bill"
+      confirmText={correcting ? 'Cancel and open at counter' : 'Cancel bill'}
+      doneText={correcting ? 'Open at counter' : 'Close'}
+      onClose={onClose}
+      onDone={onDone}
+    />
   );
 }
 
@@ -98,6 +80,9 @@ export default function InvoicePage() {
 
   const status = PAYMENT_STATUS[sale.payment_status];
   const cancelled = sale.status === 'cancelled';
+  // Old gold taken in exchange is shown on its own line, not as money paid.
+  const oldGoldPaid = Math.round(sale.payments.filter((p) => p.method === 'old_gold').reduce((s, p) => s + Number(p.amount), 0) * 100) / 100;
+  const oldGoldWeight = (sale.old_gold || []).filter((g) => g.status === 'active').reduce((s, g) => s + g.total_net_weight_g, 0);
   const totals = sale.lines.reduce((t, l) => ({ net: t.net + Number(l.net_weight_g), wastage: t.wastage + Number(l.wastage_g), billed: t.billed + Number(l.billed_weight_g) }), { net: 0, wastage: 0, billed: 0 });
   const rates = [...new Map(sale.lines.map((l) => [l.karat_name, l.gram_price_used])).entries()];
 
@@ -207,8 +192,14 @@ export default function InvoicePage() {
               <Typography sx={{ fontWeight: 700 }}>Total</Typography>
               <Typography sx={{ fontWeight: 700, fontSize: 18 }}>{formatMoney(sale.total)}</Typography>
             </Box>
+            {oldGoldPaid > 0 && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
+                <Typography variant="body2">Old gold exchanged{oldGoldWeight > 0 ? ` (${formatWeight(oldGoldWeight)})` : ''}</Typography>
+                <Typography variant="body2">− {formatMoney(oldGoldPaid)}</Typography>
+              </Box>
+            )}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
-              <Typography variant="body2">Paid</Typography><Typography variant="body2">{formatMoney(sale.paid_amount)}</Typography>
+              <Typography variant="body2">Paid</Typography><Typography variant="body2">{formatMoney(Number(sale.paid_amount) - oldGoldPaid)}</Typography>
             </Box>
             {!cancelled && Number(sale.balance) > 0 && (
               <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
@@ -224,7 +215,7 @@ export default function InvoicePage() {
             <Typography variant="caption" color="text.secondary">Payments</Typography>
             {sale.payments.map((p) => (
               <Typography key={p.payment_id} variant="body2">
-                {formatDate(p.payment_date)} · {p.receipt_no} · {PAYMENT_METHODS[p.method]}{p.reference_no ? ` (${p.reference_no})` : ''} · {formatMoney(p.amount)}
+                {formatDate(p.payment_date)} · {p.receipt_no} · {METHOD_LABELS[p.method]}{p.reference_no ? ` (${p.reference_no})` : ''} · {formatMoney(p.amount)}
               </Typography>
             ))}
           </Box>
