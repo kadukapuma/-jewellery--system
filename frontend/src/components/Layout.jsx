@@ -153,6 +153,7 @@ const NAV_CATEGORIES = [
           { label: 'Overview', path: '/finance', perm: 'finance.view' },
           { label: 'Expenses', path: '/expenses', perm: 'expenses.view' },
           { label: 'Cash & Bank', path: '/cash-bank', perm: 'finance.view' },
+          { label: 'Bank Accounts', path: '/bank-accounts', perm: 'bank_accounts.view' },
         ],
       },
     ],

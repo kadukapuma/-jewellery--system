@@ -9,6 +9,7 @@ import { writeAudit } from '../../utils/audit.js';
 import { cancelReason, grams, money as fmtMoney, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { goldHeldOfKarat } from '../craftsmen/craftsmen.gold.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
 
 // Customer repairs: the customer's own item comes in, goes to a craftsman, comes back and is handed over.
 //   received -> with_craftsman -> ready -> delivered   (cancelled before it is back)
@@ -27,6 +28,7 @@ const optionalDate = dateSchema.optional().nullable().or(z.literal('').transform
 const paymentFields = {
   amount: money('amount'),
   method: z.enum(PAYMENT_METHODS).default('cash'),
+  bank_account_id: bankAccountIdField,
   reference_no: optionalText(50),
   cheque_date: optionalDate,
 };
@@ -114,8 +116,9 @@ async function findRepair(db, id, lock = false) {
 async function findRepairFull(db, id) {
   const repair = await findRepair(db, id);
   const [payments] = await db.query(
-    `SELECT id, receipt_no, payment_date, amount, method, reference_no, status, notes
-     FROM customer_payments WHERE repair_id = ? ORDER BY payment_date, id`,
+    `SELECT p.id, p.receipt_no, p.payment_date, p.amount, p.method, p.reference_no, p.status, p.notes,
+            ${BANK_LABEL_SQL()} AS bank_account_label
+     FROM customer_payments p ${BANK_JOIN_SQL('p')} WHERE p.repair_id = ? ORDER BY p.payment_date, p.id`,
     [id],
   );
   return { ...repair, payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })) };
@@ -124,11 +127,12 @@ async function findRepairFull(db, id) {
 async function addReceipt(conn, req, repair, date, pay, note) {
   if (!pay || !(pay.amount > 0)) return null;
   await assertDayOpen(conn, date);
+  const bankAccountId = await resolveBankAccount(conn, pay.method, pay.bank_account_id);
   const receiptNo = await nextDocumentNumber(conn, 'RCP');
   const [result] = await conn.query(
-    `INSERT INTO customer_payments (receipt_no, customer_id, repair_id, payment_date, amount, method, reference_no, cheque_date, notes, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [receiptNo, repair.customer_id, repair.id, date, pay.amount, pay.method, pay.reference_no ?? null, pay.cheque_date ?? null,
+    `INSERT INTO customer_payments (receipt_no, customer_id, repair_id, payment_date, amount, method, bank_account_id, reference_no, cheque_date, notes, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [receiptNo, repair.customer_id, repair.id, date, pay.amount, pay.method, bankAccountId, pay.reference_no ?? null, pay.cheque_date ?? null,
       pay.notes || `${note} ${repair.repair_no}`, req.user.id],
   );
   await writeAudit(conn, req, { action: 'create', table: 'customer_payments', recordId: result.insertId, newValues: { ...pay, receipt_no: receiptNo, repair_id: repair.id } });

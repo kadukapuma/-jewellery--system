@@ -15,6 +15,8 @@ import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';
 import { calcItemPrice, calcPriceRange, formatWeight } from '../../utils/pricing';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount } from '../../utils/bankAccounts';
 import { gold, stone } from '../../theme';
 import CustomerPicker from './CustomerPicker';
 import SalesmanPicker from './SalesmanPicker';
@@ -197,6 +199,10 @@ export default function PosPage() {
     if (hasPriceError) { setError('Fix the prices marked in red'); return; }
     if (balance > 0 && !customer) { setError('The bill is not fully paid. Choose a customer to give credit, or take the full amount.'); return; }
     if (oldGoldExtra > 0 && !customer) { setError('The old gold is worth more than the bill. Choose the customer to keep the rest as an advance.'); return; }
+    if (payments.some((p) => Number(p.amount) > 0 && needsBankAccount(p.method) && !p.bank_account_id)) {
+      setError('Choose the bank account for each card / bank transfer / cheque payment');
+      return;
+    }
     setBusy(true);
     try {
       const res = await api.post('/sales', {
@@ -204,7 +210,10 @@ export default function PosPage() {
         salesman_id: salesman?.id ?? null,
         lines: lines.map((l) => ({ item_id: l.item.id, qty: l.qty, unit_price: l.price.sold })),
         discount: billDiscount,
-        payments: payments.filter((p) => Number(p.amount) > 0).map((p) => ({ ...p, amount: Number(p.amount) })),
+        payments: payments.filter((p) => Number(p.amount) > 0).map((p) => ({
+          method: p.method, reference_no: p.reference_no, amount: Number(p.amount),
+          bank_account_id: needsBankAccount(p.method) ? p.bank_account_id : null,
+        })),
         due_date: balance > 0 && !credit.useInstalments ? credit.due_date || null : null,
         instalments: balance > 0 && credit.useInstalments ? { count: Number(credit.count), frequency: credit.frequency, start_date: credit.start_date } : null,
         expected_total: total,
@@ -468,6 +477,11 @@ export default function PosPage() {
                 <TextField type="number" placeholder="Amount" value={p.amount} onChange={(e) => setPayment(i, { amount: e.target.value })}
                   slotProps={{ htmlInput: { min: 0, step: 'any' } }} />
                 <IconButton size="small" onClick={() => setPayments((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [newPayment()]))}><DeleteIcon fontSize="small" /></IconButton>
+                {p.method !== 'cash' && (
+                  <Box sx={{ gridColumn: '1 / 3' }}>
+                    <BankAccountPicker label="Into account" value={p.bank_account_id || ''} onChange={(id) => setPayment(i, { bank_account_id: id })} />
+                  </Box>
+                )}
                 {p.method !== 'cash' && (
                   <TextField placeholder={p.method === 'card' ? 'Approval code' : 'Reference no.'} value={p.reference_no}
                     onChange={(e) => setPayment(i, { reference_no: e.target.value })} sx={{ gridColumn: '1 / 3' }} />

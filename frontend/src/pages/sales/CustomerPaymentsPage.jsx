@@ -16,6 +16,7 @@ import PageHeader from '../../components/PageHeader';
 import RecordActions from '../../components/RecordActions';
 import { formatDateTime, formatMoney } from '../../utils/format';
 import { METHOD_LABELS } from '../../utils/payments';
+import { methodWithAccount } from '../../utils/bankAccounts';
 import ReceivePaymentDialog from './ReceivePaymentDialog';
 
 function CancelReceiptDialog({ payment, onClose, onDone }) {
@@ -117,7 +118,7 @@ export default function CustomerPaymentsPage() {
                     {p.counter_invoice_no && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>with {p.counter_invoice_no}</Typography>}
                   </TableCell>
                   <TableCell>{p.customer_name || <Typography variant="body2" color="text.secondary">Walk-in</Typography>}</TableCell>
-                  <TableCell>{METHOD_LABELS[p.method]}{p.reference_no ? ` · ${p.reference_no}` : ''}</TableCell>
+                  <TableCell>{methodWithAccount(METHOD_LABELS[p.method], p)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(p.amount)}</TableCell>
                   <TableCell align="right">{p.status === 'active' && p.unallocated > 0 ? formatMoney(p.unallocated) : '—'}</TableCell>
                   <TableCell>{p.status === 'cancelled' ? <Chip size="small" label="Cancelled" /> : <Chip size="small" color="success" variant="outlined" label="Active" />}</TableCell>

@@ -1,6 +1,6 @@
 // Everything that happened in the shop on one day: sales, money in / out, purchases, expenses,
 // craftsman work, stock movements, cash & bank, and the day's profit and loss.
-import { MONEY_FLOW_SQL, OWNER_KINDS, TRANSFER_KINDS } from '../finance/finance.service.js';
+import { MONEY_FLOW_SQL, OWNER_KINDS, TRANSFER_KINDS, listBankAccounts } from '../finance/finance.service.js';
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 const round3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
@@ -327,10 +327,32 @@ async function cashSection(db, d) {
     const moneyOut = round2(sum(rows.filter((r) => r.direction < 0), 'amount'));
     accounts[acc] = { opening: open, money_in: moneyIn, money_out: moneyOut, closing: round2(open + moneyIn - moneyOut) };
   }
+  // The bank side, one line per bank account (NULL = money recorded before accounts existed).
+  const [bankRows] = await db.query(
+    `SELECT f.bank_account_id,
+            SUM(CASE WHEN f.txn_date < ? THEN f.direction * f.amount ELSE 0 END) AS opening,
+            SUM(CASE WHEN f.txn_date = ? AND f.direction > 0 THEN f.amount ELSE 0 END) AS money_in,
+            SUM(CASE WHEN f.txn_date = ? AND f.direction < 0 THEN f.amount ELSE 0 END) AS money_out
+     FROM (${MONEY_FLOW_SQL}) f WHERE f.account = 'bank' AND f.txn_date <= ? GROUP BY f.bank_account_id`,
+    [d, d, d, d],
+  );
+  const bankAccounts = (await listBankAccounts(db)).map((a) => ({ id: a.id, label: `${a.bank_name} · ${a.account_name} ${a.account_no}` }));
+  const none = { id: null, label: 'Bank (no account)' };
+  const bank_accounts = [...bankAccounts, none]
+    .map((a) => {
+      const r = bankRows.find((x) => (x.bank_account_id == null ? a.id === null : Number(x.bank_account_id) === a.id));
+      const open = round2(r?.opening);
+      const moneyIn = round2(r?.money_in);
+      const moneyOut = round2(r?.money_out);
+      return { ...a, opening: open, money_in: moneyIn, money_out: moneyOut, closing: round2(open + moneyIn - moneyOut) };
+    })
+    .filter((a) => a.id !== null || a.opening || a.money_in || a.money_out);
+
   const nonTrading = [...TRANSFER_KINDS, ...OWNER_KINDS];
   const trading = moves.filter((m) => !nonTrading.includes(m.kind));
   return {
     accounts,
+    bank_accounts,
     movements: num2(moves, ['amount']).map((m) => ({ ...m, key: `${m.account}-${m.kind}-${m.direction}` })),
     trading_in: round2(sum(trading.filter((m) => m.direction > 0), 'amount')),
     trading_out: round2(sum(trading.filter((m) => m.direction < 0), 'amount')),

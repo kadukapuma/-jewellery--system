@@ -6,6 +6,8 @@ import TextField from '../../components/TextField';
 import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount, refreshBankAccounts } from '../../utils/bankAccounts';
 
 // Records a shop expense (rent, salaries, electricity ...). Paid in cash comes out of cash in hand,
 // anything else out of the bank.
@@ -13,7 +15,7 @@ export default function ExpenseDialog({ onClose, onSaved }) {
   const notify = useNotify();
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({
-    expense_date: todayYmd(), category_id: '', paid_to: '', amount: '', method: 'cash', reference_no: '', notes: '',
+    expense_date: todayYmd(), category_id: '', paid_to: '', amount: '', method: 'cash', bank_account_id: '', reference_no: '', notes: '',
   });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
@@ -36,11 +38,15 @@ export default function ExpenseDialog({ onClose, onSaved }) {
     if (!form.category_id) e.category_id = 'Choose a category';
     if (!(Number(form.amount) > 0)) e.amount = 'Enter an amount above 0';
     if (!form.expense_date) e.expense_date = 'Enter a date';
+    if (needsBankAccount(form.method) && !form.bank_account_id) e.bank_account_id = 'Choose the bank account';
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
     try {
-      const res = await api.post('/expenses', { ...form, amount: Number(form.amount) });
+      const res = await api.post('/expenses', {
+        ...form, amount: Number(form.amount), bank_account_id: needsBankAccount(form.method) ? form.bank_account_id : null,
+      });
+      refreshBankAccounts();
       notify(`Expense ${res.data.expense_no} saved`);
       onSaved(res.data);
     } catch (err) {
@@ -75,11 +81,17 @@ export default function ExpenseDialog({ onClose, onSaved }) {
           <Grid size={{ xs: 12, sm: 6 }}>
             {field('method', 'Paid by', {
               select: true,
-              helperText: form.method === 'cash' ? 'Comes out of cash in hand' : 'Comes out of the bank',
+              helperText: form.method === 'cash' ? 'Comes out of cash in hand' : 'Comes out of the bank account below',
               children: Object.entries(PAYMENT_METHODS).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>),
             })}
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>{field('reference_no', form.method === 'cheque' ? 'Cheque no.' : 'Bill / reference no.')}</Grid>
+          {needsBankAccount(form.method) && (
+            <Grid size={{ xs: 12 }}>
+              <BankAccountPicker label="From account" showBalance value={form.bank_account_id} error={errors.bank_account_id}
+                onChange={(id) => { setForm((f) => ({ ...f, bank_account_id: id })); setErrors((p) => ({ ...p, bank_account_id: undefined })); }} />
+            </Grid>
+          )}
           <Grid size={{ xs: 12 }}>{field('notes', 'Note', { multiline: true, minRows: 2 })}</Grid>
         </FormSection>
       </DialogContent>

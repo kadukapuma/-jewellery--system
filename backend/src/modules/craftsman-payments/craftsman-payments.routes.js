@@ -9,6 +9,7 @@ import { writeAudit } from '../../utils/audit.js';
 import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
 
 const router = Router();
 
@@ -17,6 +18,7 @@ const createSchema = z.object({
   payment_date: dateSchema,
   amount: z.coerce.number({ error: 'Enter the amount' }).positive('Amount must be above 0').max(1e12),
   method: z.enum(['cash', 'bank_transfer', 'cheque'], { error: 'Choose how it was paid' }),
+  bank_account_id: bankAccountIdField,
   reference_no: optionalText(50),
   notes: optionalText(255),
   craft_job_id: z.coerce.number().int().positive().optional().nullable(),
@@ -30,11 +32,12 @@ const listSchema = z.object({
 });
 
 const PAYMENT_SELECT = `
-  SELECT p.*, c.name AS craftsman_name, j.job_no, u.name AS created_by_name
+  SELECT p.*, c.name AS craftsman_name, j.job_no, u.name AS created_by_name, ${BANK_LABEL_SQL()} AS bank_account_label
   FROM craftsman_payments p
   JOIN craftsmen c ON c.id = p.craftsman_id
   LEFT JOIN craft_jobs j ON j.id = p.craft_job_id
-  JOIN users u ON u.id = p.created_by`;
+  JOIN users u ON u.id = p.created_by
+  ${BANK_JOIN_SQL('p')}`;
 
 async function findPayment(db, id) {
   const [[row]] = await db.query(`${PAYMENT_SELECT} WHERE p.id = ?`, [id]);
@@ -71,9 +74,10 @@ router.post('/', requirePermission('craftsman_payments.create'), async (req, res
     }
     const paymentNo = await nextDocumentNumber(conn, 'CPY');
     const [result] = await conn.query(
-      `INSERT INTO craftsman_payments (payment_no, craftsman_id, craft_job_id, payment_date, amount, method, reference_no, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [paymentNo, data.craftsman_id, data.craft_job_id ?? null, data.payment_date, data.amount, data.method, data.reference_no, data.notes, req.user.id],
+      `INSERT INTO craftsman_payments (payment_no, craftsman_id, craft_job_id, payment_date, amount, method, bank_account_id, reference_no, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [paymentNo, data.craftsman_id, data.craft_job_id ?? null, data.payment_date, data.amount, data.method,
+        await resolveBankAccount(conn, data.method, data.bank_account_id), data.reference_no, data.notes, req.user.id],
     );
     await writeAudit(conn, req, { action: 'create', table: 'craftsman_payments', recordId: result.insertId, newValues: { ...data, payment_no: paymentNo } });
     return result.insertId;

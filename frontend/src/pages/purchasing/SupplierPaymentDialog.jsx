@@ -12,6 +12,8 @@ import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { stone } from '../../theme';
 import TablePager, { usePagedRows } from '../../components/TablePager';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount, refreshBankAccounts } from '../../utils/bankAccounts';
 
 // Records a payment to a supplier. It settles the chosen purchase first, then the oldest unpaid ones;
 // anything left over stays as an advance and is used on the next purchase.
@@ -79,6 +81,7 @@ export default function SupplierPaymentDialog({ supplierId: initialSupplierId, p
     if (!form.supplier_id) e.supplier_id = 'Choose a supplier';
     if (!(Number(form.amount) > 0)) e.amount = 'Enter an amount above 0';
     if (!form.payment_date) e.payment_date = 'Enter a date';
+    if (needsBankAccount(form.method) && !form.bank_account_id) e.bank_account_id = 'Choose the bank account';
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
@@ -88,7 +91,9 @@ export default function SupplierPaymentDialog({ supplierId: initialSupplierId, p
         amount: Number(form.amount),
         cheque_date: form.method === 'cheque' ? form.cheque_date : null,
         purchase_id: purchase?.id ?? null,
+        bank_account_id: needsBankAccount(form.method) ? form.bank_account_id : null,
       });
+      refreshBankAccounts();
       notify(`Payment ${res.data.payment_no} saved`);
       onSaved(res.data);
     } catch (err) {
@@ -131,6 +136,12 @@ export default function SupplierPaymentDialog({ supplierId: initialSupplierId, p
                 {field('method', 'Paid by', { select: true, children: Object.entries(PAYMENT_METHODS).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>) })}
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>{field('reference_no', form.method === 'cheque' ? 'Cheque no.' : 'Reference no.')}</Grid>
+              {needsBankAccount(form.method) && (
+                <Grid size={{ xs: 12 }}>
+                  <BankAccountPicker label="From account" showBalance value={form.bank_account_id || ''} error={errors.bank_account_id}
+                    onChange={(id) => { setForm((f) => ({ ...f, bank_account_id: id })); setErrors((p) => ({ ...p, bank_account_id: undefined })); }} />
+                </Grid>
+              )}
               {form.method === 'cheque' && (
                 <Grid size={{ xs: 12, sm: 6 }}>{field('cheque_date', 'Cheque date', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>
               )}

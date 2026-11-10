@@ -10,6 +10,7 @@ export const MONEY_KINDS = {
   drawing: { label: 'Drawing', color: 'info' },
   deposit: { label: 'Cash → bank', color: 'default' },
   withdrawal: { label: 'Bank → cash', color: 'default' },
+  bank_to_bank: { label: 'Bank → bank', color: 'default' },
 };
 
 // Manual cash / bank entries. `pickAccount`: the user chooses Cash or Bank; transfers know their direction.
@@ -19,6 +20,7 @@ export const CASH_ENTRY_TYPES = {
   drawing: { label: 'Drawing', hint: 'Owner takes money out of the shop', pickAccount: true },
   deposit: { label: 'Deposit cash to bank', hint: 'Cash in hand goes down, bank goes up', pickAccount: false },
   withdrawal: { label: 'Withdraw cash from bank', hint: 'Bank goes down, cash in hand goes up', pickAccount: false },
+  bank_to_bank: { label: 'Transfer between bank accounts', hint: 'One bank account goes down, the other goes up', pickAccount: false },
 };
 
 export const ACCOUNTS = { cash: 'Cash in hand', bank: 'Bank' };

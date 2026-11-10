@@ -20,6 +20,8 @@ import {
   cancelOldGoldReceipt, createOldGoldReceipt, oldGoldLinesSchema, priceOldGoldLines,
 } from '../old-gold/old-gold.service.js';
 
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
+
 const router = Router();
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -43,6 +45,7 @@ const createSchema = z.object({
   payments: z
     .array(z.object({
       method: z.enum(PAYMENT_METHODS),
+      bank_account_id: bankAccountIdField,
       amount: z.coerce.number().positive('Amount must be above 0').max(1e12),
       reference_no: optionalText(50),
     }))
@@ -99,8 +102,10 @@ export async function findSale(db, id) {
     [id],
   );
   const [payments] = await db.query(
-    `SELECT a.amount, p.id AS payment_id, p.receipt_no, p.payment_date, p.method, p.reference_no, p.sale_id = ? AS at_counter
+    `SELECT a.amount, p.id AS payment_id, p.receipt_no, p.payment_date, p.method, p.reference_no, p.sale_id = ? AS at_counter,
+            ${BANK_LABEL_SQL()} AS bank_account_label
      FROM customer_payment_allocations a JOIN customer_payments p ON p.id = a.payment_id
+     ${BANK_JOIN_SQL('p')}
      WHERE a.sale_id = ? AND p.status = 'active' ORDER BY p.payment_date, p.id`,
     [id, id],
   );
@@ -261,6 +266,7 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
 
     // Payments: anything over what is due is change, given back from the cash.
     const payments = data.payments.map((p) => ({ ...p }));
+    for (const p of payments) p.bank_account_id = await resolveBankAccount(conn, p.method, p.bank_account_id);
     const received = round2(payments.reduce((s, p) => s + p.amount, 0));
     let change = 0;
     if (received > due) {
@@ -331,9 +337,9 @@ router.post('/', requirePermission('sales.create'), async (req, res) => {
     for (const p of payments.filter((x) => x.amount > 0)) {
       const receiptNo = await nextDocumentNumber(conn, 'RCP');
       const [pay] = await conn.query(
-        `INSERT INTO customer_payments (receipt_no, customer_id, sale_id, payment_date, amount, method, reference_no, created_by)
-         VALUES (?, ?, ?, NOW(), ?, ?, ?, ?)`,
-        [receiptNo, customer?.id ?? null, saleId, p.amount, p.method, p.reference_no, req.user.id],
+        `INSERT INTO customer_payments (receipt_no, customer_id, sale_id, payment_date, amount, method, bank_account_id, reference_no, created_by)
+         VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
+        [receiptNo, customer?.id ?? null, saleId, p.amount, p.method, p.bank_account_id, p.reference_no, req.user.id],
       );
       await conn.query('INSERT INTO customer_payment_allocations (payment_id, sale_id, amount) VALUES (?, ?, ?)', [pay.insertId, saleId, p.amount]);
     }

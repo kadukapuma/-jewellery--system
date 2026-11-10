@@ -13,6 +13,7 @@ import { getCurrentPrices } from '../gold-prices/gold-prices.service.js';
 import {
   cancelOldGoldReceipt, createOldGoldReceipt, getDeductionPercent, oldGoldLinesSchema, oldGoldNotes, priceOldGoldLines,
 } from './old-gold.service.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField } from '../../utils/bankAccount.js';
 
 // Old gold taken from customers: bought for cash, or kept as credit on the customer's account.
 // Exchange on a new bill is saved with the bill (POST /api/sales with `old_gold`).
@@ -26,6 +27,7 @@ const createSchema = z
     mode: z.enum(['cash', 'credit'], { error: 'Choose cash or credit' }),
     payout_method: z.enum(['cash', 'bank_transfer']).default('cash'),
     payout_reference: optionalText(50),
+    bank_account_id: bankAccountIdField,
     lines: oldGoldLinesSchema,
     notes: oldGoldNotes,
   })
@@ -44,7 +46,7 @@ const listSchema = z.object({
 
 const RECEIPT_SELECT = `
   SELECT r.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.nic AS customer_nic,
-         s.invoice_no, u.name AS created_by_name,
+         s.invoice_no, u.name AS created_by_name, ${BANK_LABEL_SQL()} AS bank_account_label,
          (SELECT COUNT(*) FROM old_gold_lines l WHERE l.receipt_id = r.id) AS pieces,
          -- How much of the credit / exchange value has gone onto bills, and which bills.
          (SELECT COALESCE(SUM(a.amount), 0) FROM customer_payment_allocations a JOIN customer_payments p ON p.id = a.payment_id
@@ -55,7 +57,8 @@ const RECEIPT_SELECT = `
   FROM old_gold_receipts r
   LEFT JOIN customers c ON c.id = r.customer_id
   LEFT JOIN sales s ON s.id = r.sale_id
-  JOIN users u ON u.id = r.created_by`;
+  JOIN users u ON u.id = r.created_by
+  ${BANK_JOIN_SQL('r')}`;
 
 // usage: cash = paid out; otherwise how much of the value went onto bills.
 //   unused (all still an advance) | partly_used | used
@@ -172,6 +175,7 @@ router.post('/', requirePermission('old_gold.create'), async (req, res) => {
       mode: data.mode,
       payoutMethod: data.payout_method,
       payoutReference: data.payout_reference,
+      payoutBankAccountId: data.bank_account_id,
       lines: data.lines,
       notes: data.notes,
     });

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Box, Button, Card, Chip, DialogActions, DialogContent, DialogTitle, Grid, IconButton, LinearProgress, MenuItem, Table,
+  Alert, Box, Button, Card, Chip, Grid, IconButton, LinearProgress, Link, MenuItem, Table,
   TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
 } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
 import CancelIcon from '@mui/icons-material/CancelOutlined';
 import CancelDialog from '../../components/CancelDialog';
@@ -18,7 +19,13 @@ import { formatAmount, formatDate, formatMoney } from '../../utils/format';
 import { ACCOUNTS, CASH_ENTRY_TYPES } from '../../utils/finance';
 import CashEntryDialog from './CashEntryDialog';
 
-const accountText = (e) => (e.entry_type === 'deposit' ? 'Cash → Bank' : e.entry_type === 'withdrawal' ? 'Bank → Cash' : ACCOUNTS[e.account]);
+const bankText = (label) => label || 'Bank (no account)';
+const accountText = (e) => {
+  if (e.entry_type === 'deposit') return `Cash → ${bankText(e.bank_account_label)}`;
+  if (e.entry_type === 'withdrawal') return `${bankText(e.bank_account_label)} → Cash`;
+  if (e.entry_type === 'bank_to_bank') return `${bankText(e.bank_account_label)} → ${bankText(e.to_bank_account_label)}`;
+  return e.account === 'bank' ? bankText(e.bank_account_label) : ACCOUNTS[e.account];
+};
 
 function CancelEntryDialog({ entry, onClose, onDone }) {
   return (
@@ -77,12 +84,40 @@ export default function CashBankPage() {
           <StatCard tone="gold" label={ACCOUNTS.cash} note="Everything paid or received in cash" value={balances ? formatAmount(Math.round(balances.cash)) : '—'} to="/finance" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
-          <StatCard tone="light" label={ACCOUNTS.bank} note="Card, bank transfer and cheque" value={balances ? formatAmount(Math.round(balances.bank)) : '—'} to="/finance" />
+          <StatCard tone="light" label="All bank accounts" note="Card, bank transfer and cheque" value={balances ? formatAmount(Math.round(balances.bank)) : '—'} to="/bank-accounts" />
         </Grid>
         <Grid size={{ xs: 12, sm: 12, lg: 4 }}>
           <StatCard tone="gray" label="Total" note="Cash + bank" value={balances ? formatAmount(Math.round(balances.cash + balances.bank)) : '—'} />
         </Grid>
       </Grid>
+
+      {balances && (balances.accounts.length > 0 || Math.abs(balances.unassigned) >= 0.005) && (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+            <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>Bank accounts</Typography>
+            {can('bank_accounts.manage') && <Button size="small" component={RouterLink} to="/bank-accounts">Manage accounts</Button>}
+          </Box>
+          <Grid container spacing={2.5} sx={{ mb: 3 }}>
+            {balances.accounts.filter((a) => a.is_active || Math.abs(a.balance) >= 0.005).map((a) => (
+              <Grid key={a.id} size={{ xs: 12, sm: 6, lg: 3 }}>
+                <StatCard tone="light" label={`${a.bank_name} · ${a.account_name}`} note={[a.account_no, a.branch, !a.is_active && 'inactive'].filter(Boolean).join(' · ')}
+                  value={formatAmount(Math.round(a.balance))} />
+              </Grid>
+            ))}
+            {Math.abs(balances.unassigned) >= 0.005 && (
+              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                <StatCard tone="gray" label="Bank (no account)" note="Recorded before bank accounts were set up" value={formatAmount(Math.round(balances.unassigned))} />
+              </Grid>
+            )}
+          </Grid>
+        </>
+      )}
+      {balances && !balances.accounts.length && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          No bank accounts set up yet. Add your banks and accounts so card, bank transfer and cheque money is kept per account.{' '}
+          {can('bank_accounts.manage') && <Link component={RouterLink} to="/bank-accounts">Set up bank accounts</Link>}
+        </Alert>
+      )}
 
       <Card>
         <Box sx={{ display: 'flex', gap: 1.5, p: 2, flexWrap: 'wrap', alignItems: 'center' }}>

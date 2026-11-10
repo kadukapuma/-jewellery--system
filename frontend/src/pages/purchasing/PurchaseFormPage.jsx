@@ -16,6 +16,8 @@ import { formatMoney } from '../../utils/format';
 import { calcItemPrice, formatWeight } from '../../utils/pricing';
 import PriceRangeFields, { priceRangeErrors } from '../../components/PriceRangeFields';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount } from '../../utils/bankAccounts';
 import { gold, stone } from '../../theme';
 
 let nextKey = 1;
@@ -108,6 +110,7 @@ export default function PurchaseFormPage() {
       if (!(Number(l.purchase_price) > 0)) e[`lines.${i}.purchase_price`] = 'Above 0';
     });
     if (payment.amount !== '' && !(paidNow > 0)) e['payment.amount'] = 'Enter an amount above 0, or leave empty';
+    if (paidNow > 0 && needsBankAccount(payment.method) && !payment.bank_account_id) e['payment.bank_account_id'] = 'Choose the bank account';
     return e;
   };
 
@@ -130,7 +133,9 @@ export default function PurchaseFormPage() {
           price_min_percent: l.price_min_percent, price_max_percent: l.price_max_percent,
           qty: Number(l.qty), purchase_price: Number(l.purchase_price),
         })),
-      payment: paidNow > 0 ? { ...payment, amount: paidNow } : null,
+      payment: paidNow > 0
+        ? { ...payment, amount: paidNow, bank_account_id: needsBankAccount(payment.method) ? payment.bank_account_id : null }
+        : null,
     };
     try {
       const res = await api.post('/purchases', body);
@@ -310,6 +315,12 @@ export default function PurchaseFormPage() {
                 <Grid size={{ xs: 12, sm: 4 }}>
                   <TextField label="Reference no." value={payment.reference_no} onChange={(e) => setPayment({ ...payment, reference_no: e.target.value })} helperText=" " />
                 </Grid>
+                {needsBankAccount(payment.method) && (
+                  <Grid size={{ xs: 12 }}>
+                    <BankAccountPicker label="From account" showBalance value={payment.bank_account_id || ''} error={err('payment.bank_account_id')}
+                      onChange={(id) => { setPayment((p) => ({ ...p, bank_account_id: id })); clearError('payment.bank_account_id'); }} />
+                  </Grid>
+                )}
               </Grid>
             </Card>
           )}

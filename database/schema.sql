@@ -296,6 +296,31 @@ CREATE TABLE salesmen (
 );
 
 -- ---------------------------------------------------------------------
+-- 8c. BANKS and the shop's BANK ACCOUNTS. A card / bank transfer / cheque payment
+--     records the account it went to or came from (NULL = recorded before accounts existed).
+-- ---------------------------------------------------------------------
+CREATE TABLE banks (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(100) NOT NULL UNIQUE,
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE bank_accounts (
+  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  bank_id        INT UNSIGNED NOT NULL,
+  account_name   VARCHAR(100) NOT NULL,
+  account_no     VARCHAR(50) NOT NULL,
+  branch         VARCHAR(100) NULL,
+  is_active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ba_bank FOREIGN KEY (bank_id) REFERENCES banks(id),
+  UNIQUE KEY uq_ba_bank_no (bank_id, account_no)
+);
+
+-- ---------------------------------------------------------------------
 -- 9. ITEMS (item master - every piece / biscuit in stock)
 --    source = 'purchase' -> came from a supplier (wastage_g = 0)
 --    source = 'craft'    -> made by a craftsman (wastage_g from craft job)
@@ -543,6 +568,7 @@ CREATE TABLE old_gold_receipts (
   mode                 ENUM('cash','credit','exchange') NOT NULL,
   payout_method        ENUM('cash','bank_transfer') NULL, -- only for mode = cash
   payout_reference     VARCHAR(50) NULL,
+  bank_account_id      INT UNSIGNED NULL,               -- account paid from, for a bank transfer payout
   sale_id              INT UNSIGNED NULL,               -- the bill it was exchanged on
   total_net_weight_g   DECIMAL(10,3) NOT NULL DEFAULT 0,
   total_value          DECIMAL(14,2) NOT NULL DEFAULT 0,
@@ -555,6 +581,7 @@ CREATE TABLE old_gold_receipts (
   CONSTRAINT fk_ogr_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
   CONSTRAINT fk_ogr_sale     FOREIGN KEY (sale_id)     REFERENCES sales(id),
   CONSTRAINT fk_ogr_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT fk_ogr_bank_account FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
   INDEX idx_ogr_date (receipt_date),
   INDEX idx_ogr_customer (customer_id)
 );
@@ -606,6 +633,7 @@ CREATE TABLE customer_payments (
   method               ENUM('cash','card','bank_transfer','cheque','old_gold') NOT NULL DEFAULT 'cash', -- old_gold = value of gold taken in, not money
   reference_no         VARCHAR(50) NULL,                -- card slip / cheque no / bank ref
   cheque_date          DATE NULL,
+  bank_account_id      INT UNSIGNED NULL,               -- account it went to (card / transfer / cheque)
   notes                VARCHAR(255) NULL,
   status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
   created_by           INT UNSIGNED NOT NULL,
@@ -615,6 +643,7 @@ CREATE TABLE customer_payments (
   CONSTRAINT fk_cp_repair   FOREIGN KEY (repair_id)   REFERENCES repair_orders(id),
   CONSTRAINT fk_cp_old_gold FOREIGN KEY (old_gold_id) REFERENCES old_gold_receipts(id),
   CONSTRAINT fk_cp_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT fk_cp_bank_account FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT chk_cp_amount  CHECK (amount > 0),
   INDEX idx_cp_customer (customer_id, payment_date)
 );
@@ -682,12 +711,14 @@ CREATE TABLE supplier_payments (
   method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
   reference_no         VARCHAR(50) NULL,
   cheque_date          DATE NULL,
+  bank_account_id      INT UNSIGNED NULL,               -- account paid from (card / transfer / cheque)
   notes                VARCHAR(255) NULL,
   status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_spy_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
   CONSTRAINT fk_spy_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT fk_spy_bank_account FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT chk_spy_amount  CHECK (amount > 0),
   INDEX idx_spy_supplier (supplier_id, payment_date)
 );
@@ -749,6 +780,7 @@ CREATE TABLE craftsman_payments (
   amount               DECIMAL(14,2) NOT NULL,
   method               ENUM('cash','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
   reference_no         VARCHAR(50) NULL,
+  bank_account_id      INT UNSIGNED NULL,               -- account paid from (transfer / cheque)
   notes                VARCHAR(255) NULL,
   status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
   created_by           INT UNSIGNED NOT NULL,
@@ -756,13 +788,15 @@ CREATE TABLE craftsman_payments (
   CONSTRAINT fk_cpy_craftsman FOREIGN KEY (craftsman_id) REFERENCES craftsmen(id),
   CONSTRAINT fk_cpy_job       FOREIGN KEY (craft_job_id) REFERENCES craft_jobs(id),
   CONSTRAINT fk_cpy_user      FOREIGN KEY (created_by)   REFERENCES users(id),
+  CONSTRAINT fk_cpy_bank_account FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT chk_cpy_amount   CHECK (amount > 0),
   INDEX idx_cpy_craftsman (craftsman_id, payment_date)
 );
 
 -- =====================================================================
 -- FINANCE  (shop expenses + cash / bank accounts)
---   Account of a money movement: method 'cash' -> Cash, anything else -> Bank.
+--   Account of a money movement: method 'cash' -> Cash, anything else -> the bank account it names
+--   (bank_account_id; NULL = recorded before bank accounts were set up).
 --   Cash balance / Bank balance = every active receipt - every active payment
 --   - every active expense +/- cash_entries (opening, capital, drawings, transfers).
 -- =====================================================================
@@ -790,12 +824,14 @@ CREATE TABLE expenses (
   amount               DECIMAL(14,2) NOT NULL,
   method               ENUM('cash','card','bank_transfer','cheque') NOT NULL DEFAULT 'cash',
   reference_no         VARCHAR(50) NULL,
+  bank_account_id      INT UNSIGNED NULL,               -- account paid from (card / transfer / cheque)
   notes                VARCHAR(255) NULL,
   status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_exp_category FOREIGN KEY (category_id) REFERENCES expense_categories(id),
   CONSTRAINT fk_exp_user     FOREIGN KEY (created_by)  REFERENCES users(id),
+  CONSTRAINT fk_exp_bank_account FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT chk_exp_amount  CHECK (amount > 0),
   INDEX idx_exp_date (expense_date)
 );
@@ -804,19 +840,25 @@ CREATE TABLE expenses (
 -- 22c. CASH ENTRIES (money that is not a sale, purchase or expense)
 --      opening / capital_in -> + account   drawing -> - account
 --      deposit    = cash -> bank           withdrawal = bank -> cash   (account ignored)
+--      bank_to_bank = bank_account_id -> to_bank_account_id
+--      bank_account_id = the bank account for account 'bank', deposit, withdrawal and bank_to_bank
 -- ---------------------------------------------------------------------
 CREATE TABLE cash_entries (
   id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   entry_no             VARCHAR(30) NOT NULL UNIQUE,     -- CSH-000001
   entry_date           DATE NOT NULL,
-  entry_type           ENUM('opening','capital_in','drawing','deposit','withdrawal') NOT NULL,
+  entry_type           ENUM('opening','capital_in','drawing','deposit','withdrawal','bank_to_bank') NOT NULL,
   account              ENUM('cash','bank') NOT NULL DEFAULT 'cash',
+  bank_account_id      INT UNSIGNED NULL,
+  to_bank_account_id   INT UNSIGNED NULL,
   amount               DECIMAL(14,2) NOT NULL,
   notes                VARCHAR(255) NULL,
   status               ENUM('active','cancelled') NOT NULL DEFAULT 'active',
   created_by           INT UNSIGNED NOT NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_ce_user    FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT fk_ce_bank_account    FOREIGN KEY (bank_account_id)    REFERENCES bank_accounts(id),
+  CONSTRAINT fk_ce_to_bank_account FOREIGN KEY (to_bank_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT chk_ce_amount CHECK (amount > 0),
   INDEX idx_ce_date (entry_date)
 );
@@ -971,6 +1013,8 @@ INSERT INTO permissions (code, module, action, description, sort_order) VALUES
   ('expenses.cancel',         'expenses',    'cancel',       'Cancel a shop expense',                    293),
   ('cash_entries.create',     'cash_entries','create',       'Opening balance, capital, drawings, transfers', 294),
   ('cash_entries.cancel',     'cash_entries','cancel',       'Cancel a cash / bank entry',               295),
+  ('bank_accounts.view',      'bank_accounts','view',        'See the shop''s banks and bank accounts',  286),
+  ('bank_accounts.manage',    'bank_accounts','manage',      'Add and change banks and bank accounts',   287),
   ('day_end.view',            'day_end',     'view',         'See the day end summary and closed days',  300),
   ('day_end.close',           'day_end',     'close',        'Count the cash and close (lock) a day',    301),
   ('repairs.view',            'repairs',     'view',         'See customer repairs',                     310),
@@ -994,7 +1038,7 @@ SELECT r.id, p.id FROM roles r JOIN permissions p
 WHERE r.name = 'Cashier'
   AND p.code IN ('dashboard.view','gold_prices.view','items.view',
                  'customers.view','customers.create','customers.edit',
-                 'salesmen.view',
+                 'salesmen.view', 'bank_accounts.view',
                  'sales.view','sales.create','sales.reprint',
                  'customer_payments.view','customer_payments.create',
                  'instalments.view','tags.print',

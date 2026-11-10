@@ -9,7 +9,8 @@ import { writeAudit } from '../../utils/audit.js';
 import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
-import { MONEY_FLOW_SQL, OWNER_KINDS, TRANSFER_KINDS, accountBalances } from './finance.service.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
+import { MONEY_FLOW_SQL, OWNER_KINDS, TRANSFER_KINDS, accountBalances, bankAccountBalance } from './finance.service.js';
 
 const router = Router();
 
@@ -29,7 +30,7 @@ router.get('/overview', requirePermission('finance.view'), async (req, res) => {
 
   const [byKind] = await pool.query(
     `SELECT f.kind, f.direction, COUNT(*) AS count, SUM(f.amount) AS amount
-     FROM (${MONEY_FLOW_SQL}) f WHERE ${IN_RANGE} AND f.kind NOT IN ('deposit', 'withdrawal')
+     FROM (${MONEY_FLOW_SQL}) f WHERE ${IN_RANGE} AND f.kind NOT IN (${TRANSFER_KINDS.map((k) => `'${k}'`).join(', ')})
      GROUP BY f.kind, f.direction`,
     range,
   );
@@ -57,7 +58,9 @@ router.get('/overview', requirePermission('finance.view'), async (req, res) => {
     range,
   );
   const [recent] = await pool.query(
-    `SELECT f.* FROM (${MONEY_FLOW_SQL}) f WHERE ${IN_RANGE}
+    `SELECT f.*, ${BANK_LABEL_SQL('ba', 'bk')} AS bank_account_label
+     FROM (${MONEY_FLOW_SQL}) f LEFT JOIN bank_accounts ba ON ba.id = f.bank_account_id LEFT JOIN banks bk ON bk.id = ba.bank_id
+     WHERE ${IN_RANGE}
      ORDER BY f.txn_date DESC, f.kind, f.ref_id DESC LIMIT 500`,
     range,
   );
@@ -107,12 +110,14 @@ router.get('/overview', requirePermission('finance.view'), async (req, res) => {
 // ---------------------------------------------------------------------
 // Cash / bank entries: opening balances, owner capital and drawings, transfers.
 // ---------------------------------------------------------------------
-const ENTRY_TYPES = ['opening', 'capital_in', 'drawing', 'deposit', 'withdrawal'];
+const ENTRY_TYPES = ['opening', 'capital_in', 'drawing', 'deposit', 'withdrawal', 'bank_to_bank'];
 
 const entrySchema = z.object({
   entry_date: dateSchema,
   entry_type: z.enum(ENTRY_TYPES, { error: 'Choose the type of entry' }),
   account: z.enum(['cash', 'bank'], { error: 'Choose cash or bank' }).default('cash'),
+  bank_account_id: bankAccountIdField,
+  to_bank_account_id: bankAccountIdField,
   amount: z.coerce.number({ error: 'Enter the amount' }).positive('Amount must be above 0').max(1e12),
   notes: optionalText(255),
 });
@@ -124,8 +129,12 @@ const entryListSchema = z.object({
 });
 
 const ENTRY_SELECT = `
-  SELECT ce.*, u.name AS created_by_name
-  FROM cash_entries ce JOIN users u ON u.id = ce.created_by`;
+  SELECT ce.*, u.name AS created_by_name,
+         ${BANK_LABEL_SQL('ba', 'bk')} AS bank_account_label,
+         ${BANK_LABEL_SQL('tba', 'tbk')} AS to_bank_account_label
+  FROM cash_entries ce JOIN users u ON u.id = ce.created_by
+  ${BANK_JOIN_SQL('ce', 'ba', 'bk')}
+  LEFT JOIN bank_accounts tba ON tba.id = ce.to_bank_account_id LEFT JOIN banks tbk ON tbk.id = tba.bank_id`;
 
 async function findEntry(db, id) {
   const [[row]] = await db.query(`${ENTRY_SELECT} WHERE ce.id = ?`, [id]);
@@ -133,8 +142,16 @@ async function findEntry(db, id) {
   return row;
 }
 
-// The account money leaves for this entry, or null when it only adds money.
-const accountTakenFrom = (e) => ({ drawing: e.account, deposit: 'cash', withdrawal: 'bank' }[e.entry_type] ?? null);
+// Where money leaves for this entry: 'cash', a bank account id, or null when it only adds money.
+const takenFrom = (e) => {
+  if (e.entry_type === 'deposit') return 'cash';
+  if (e.entry_type === 'withdrawal' || e.entry_type === 'bank_to_bank') return e.bank_account_id;
+  if (e.entry_type === 'drawing') return e.account === 'cash' ? 'cash' : e.bank_account_id;
+  return null;
+};
+
+// Does this entry name a bank account (the one money goes into or comes out of)?
+const usesBankAccount = (e) => ['deposit', 'withdrawal', 'bank_to_bank'].includes(e.entry_type) || e.account === 'bank';
 
 router.get('/balances', requirePermission('finance.view'), async (req, res) => {
   res.json(await accountBalances(pool));
@@ -156,20 +173,28 @@ router.post('/cash-entries', requirePermission('cash_entries.create'), async (re
   if (TRANSFER_KINDS.includes(data.entry_type)) data.account = data.entry_type === 'deposit' ? 'cash' : 'bank';
   const id = await withTransaction(async (conn) => {
     await assertDayOpen(conn, data.entry_date);
-    const from = accountTakenFrom(data);
+    const fromLabel = data.entry_type === 'bank_to_bank' ? 'bank account to take the money from' : 'bank account';
+    data.bank_account_id = usesBankAccount(data) ? await resolveBankAccount(conn, 'bank', data.bank_account_id, fromLabel) : null;
+    if (data.entry_type === 'bank_to_bank') {
+      data.to_bank_account_id = await resolveBankAccount(conn, 'bank', data.to_bank_account_id, 'bank account to put the money into');
+      if (data.to_bank_account_id === data.bank_account_id) throw new HttpError(400, 'Choose two different bank accounts');
+    } else {
+      data.to_bank_account_id = null;
+    }
+    const from = takenFrom(data);
     if (from) {
       // Lock the entries table so two withdrawals at once cannot both pass the balance check.
       await conn.query('SELECT id FROM cash_entries ORDER BY id DESC LIMIT 1 FOR UPDATE');
-      const balance = (await accountBalances(conn))[from];
+      const balance = from === 'cash' ? (await accountBalances(conn)).cash : await bankAccountBalance(conn, from);
       if (data.amount > balance) {
-        throw new HttpError(400, `Only ${balance.toFixed(2)} in ${from === 'cash' ? 'cash' : 'the bank'} – cannot take out ${data.amount.toFixed(2)}`);
+        throw new HttpError(400, `Only ${balance.toFixed(2)} in ${from === 'cash' ? 'cash' : 'that bank account'} – cannot take out ${data.amount.toFixed(2)}`);
       }
     }
     const entryNo = await nextDocumentNumber(conn, 'CSH');
     const [result] = await conn.query(
-      `INSERT INTO cash_entries (entry_no, entry_date, entry_type, account, amount, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [entryNo, data.entry_date, data.entry_type, data.account, data.amount, data.notes, req.user.id],
+      `INSERT INTO cash_entries (entry_no, entry_date, entry_type, account, bank_account_id, to_bank_account_id, amount, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [entryNo, data.entry_date, data.entry_type, data.account, data.bank_account_id, data.to_bank_account_id, data.amount, data.notes, req.user.id],
     );
     await writeAudit(conn, req, { action: 'create', table: 'cash_entries', recordId: result.insertId, newValues: { ...data, entry_no: entryNo } });
     return result.insertId;

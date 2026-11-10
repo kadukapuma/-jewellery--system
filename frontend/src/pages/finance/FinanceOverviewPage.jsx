@@ -178,7 +178,7 @@ function FinanceView({ data }) {
           { label: 'Type', render: (r) => <Chip size="small" variant="outlined" label={MONEY_KINDS[r.kind]?.label || r.kind} color={MONEY_KINDS[r.kind]?.color || 'default'} /> },
           { label: 'Ref', nowrap: true, render: (r) => r.ref_no },
           { label: 'Party / note', render: (r) => r.party || '—' },
-          { label: 'Account', render: (r) => `${ACCOUNTS[r.account]}${r.method && r.method !== 'cash' ? ` · ${PAYMENT_METHODS[r.method]}` : ''}` },
+          { label: 'Account', render: (r) => (r.account === 'bank' ? [r.bank_account_label || 'Bank (no account)', r.method && PAYMENT_METHODS[r.method]].filter(Boolean).join(' · ') : ACCOUNTS.cash) },
           { label: 'In', align: 'right', render: (r) => (r.direction > 0 ? formatMoney(r.amount) : '') },
           { label: 'Out', align: 'right', render: (r) => (r.direction < 0 ? formatMoney(r.amount) : '') },
         ]}
@@ -187,7 +187,7 @@ function FinanceView({ data }) {
           { label: 'Type', value: (r) => MONEY_KINDS[r.kind]?.label || r.kind },
           { label: 'Ref', value: (r) => r.ref_no },
           { label: 'Party / note', value: (r) => r.party },
-          { label: 'Account', value: (r) => ACCOUNTS[r.account] },
+          { label: 'Account', value: (r) => (r.account === 'bank' ? r.bank_account_label || 'Bank (no account)' : ACCOUNTS.cash) },
           { label: 'Method', value: (r) => (r.method ? PAYMENT_METHODS[r.method] : '') },
           { label: 'In', value: (r) => (r.direction > 0 ? r.amount : '') },
           { label: 'Out', value: (r) => (r.direction < 0 ? r.amount : '') },

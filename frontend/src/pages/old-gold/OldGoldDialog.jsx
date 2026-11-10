@@ -13,6 +13,8 @@ import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';
 import { todayYmd } from '../../utils/payments';
 import CustomerPicker from '../sales/CustomerPicker';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount } from '../../utils/bankAccounts';
 import {
   OldGoldLinesEditor, checkLines, emptyOldGoldLine, linesBody, totalOf, useOldGoldSetup,
 } from './OldGoldLines';
@@ -43,6 +45,8 @@ export function OldGoldDialog({ onClose, onSaved }) {
     const check = checkLines(lines, setup, !!user?.is_super_admin);
     const e = { ...check.errors };
     if (mode === 'credit' && !customer) e.customer = 'Choose the customer to give the credit to';
+    const bank = mode === 'cash' && needsBankAccount(form.payout_method);
+    if (bank && !form.bank_account_id) e.bank_account_id = 'Choose the bank account';
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
@@ -54,6 +58,7 @@ export function OldGoldDialog({ onClose, onSaved }) {
         receipt_date: form.receipt_date,
         payout_method: form.payout_method,
         payout_reference: form.payout_reference,
+        bank_account_id: bank ? form.bank_account_id : null,
         notes: form.notes,
         lines: linesBody(lines),
       });
@@ -109,6 +114,12 @@ export function OldGoldDialog({ onClose, onSaved }) {
                       </TextField>
                     </Grid>
                     <Grid size={{ xs: 12, sm: 6 }}><TextField label="Reference no." value={form.payout_reference} onChange={set('payout_reference')} fullWidth /></Grid>
+                    {needsBankAccount(form.payout_method) && (
+                      <Grid size={{ xs: 12 }}>
+                        <BankAccountPicker label="From account" showBalance value={form.bank_account_id || ''} error={errors.bank_account_id}
+                          onChange={(id) => { setForm((f) => ({ ...f, bank_account_id: id })); clearError('bank_account_id'); }} />
+                      </Grid>
+                    )}
                   </>
                 )}
                 <Grid size={{ xs: 12, sm: 6 }}>

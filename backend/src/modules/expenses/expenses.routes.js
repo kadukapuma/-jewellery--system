@@ -10,6 +10,7 @@ import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.j
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { adminApproval } from '../../utils/changeGuard.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
 
 const router = Router();
 
@@ -19,6 +20,7 @@ const createSchema = z.object({
   paid_to: optionalText(150),
   amount: z.coerce.number({ error: 'Enter the amount' }).positive('Amount must be above 0').max(1e12),
   method: z.enum(PAYMENT_METHODS, { error: 'Choose how it was paid' }),
+  bank_account_id: bankAccountIdField,
   reference_no: optionalText(50),
   notes: optionalText(255),
 });
@@ -38,10 +40,11 @@ const categorySchema = z.object({
 });
 
 const EXPENSE_SELECT = `
-  SELECT e.*, ec.name AS category_name, u.name AS created_by_name
+  SELECT e.*, ec.name AS category_name, u.name AS created_by_name, ${BANK_LABEL_SQL()} AS bank_account_label
   FROM expenses e
   JOIN expense_categories ec ON ec.id = e.category_id
-  JOIN users u ON u.id = e.created_by`;
+  JOIN users u ON u.id = e.created_by
+  ${BANK_JOIN_SQL('e')}`;
 
 async function findExpense(db, id) {
   const [[row]] = await db.query(`${EXPENSE_SELECT} WHERE e.id = ?`, [id]);
@@ -116,9 +119,10 @@ router.post('/', requirePermission('expenses.create'), async (req, res) => {
     if (!category.is_active) throw new HttpError(400, 'This category is no longer in use');
     const expenseNo = await nextDocumentNumber(conn, 'EXP');
     const [result] = await conn.query(
-      `INSERT INTO expenses (expense_no, expense_date, category_id, paid_to, amount, method, reference_no, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [expenseNo, data.expense_date, data.category_id, data.paid_to, data.amount, data.method, data.reference_no, data.notes, req.user.id],
+      `INSERT INTO expenses (expense_no, expense_date, category_id, paid_to, amount, method, bank_account_id, reference_no, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [expenseNo, data.expense_date, data.category_id, data.paid_to, data.amount, data.method,
+        await resolveBankAccount(conn, data.method, data.bank_account_id), data.reference_no, data.notes, req.user.id],
     );
     await writeAudit(conn, req, { action: 'create', table: 'expenses', recordId: result.insertId, newValues: { ...data, expense_no: expenseNo } });
     return result.insertId;

@@ -16,6 +16,7 @@ import PageHeader from '../../components/PageHeader';
 import RecordActions from '../../components/RecordActions';
 import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS } from '../../utils/payments';
+import { methodWithAccount } from '../../utils/bankAccounts';
 import ExpenseDialog from './ExpenseDialog';
 import ExpenseCategoriesDialog from './ExpenseCategoriesDialog';
 
@@ -123,7 +124,7 @@ export default function ExpensesPage() {
                   </TableCell>
                   <TableCell>{e.category_name}</TableCell>
                   <TableCell>{e.paid_to || '—'}</TableCell>
-                  <TableCell>{PAYMENT_METHODS[e.method]}{e.reference_no ? ` · ${e.reference_no}` : ''}</TableCell>
+                  <TableCell>{methodWithAccount(PAYMENT_METHODS[e.method], e)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(e.amount)}</TableCell>
                   <TableCell>{e.status === 'cancelled' ? <Chip size="small" label="Cancelled" /> : <Chip size="small" color="success" variant="outlined" label="Active" />}</TableCell>
                   <TableCell align="right">

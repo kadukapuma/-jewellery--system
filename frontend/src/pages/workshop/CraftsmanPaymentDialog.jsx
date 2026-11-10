@@ -8,6 +8,8 @@ import api, { errorMessage, fieldErrors } from '../../api/client';
 import { useNotify } from '../../components/Notify';
 import { formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount, refreshBankAccounts } from '../../utils/bankAccounts';
 
 const METHODS = ['cash', 'bank_transfer', 'cheque'];
 
@@ -17,6 +19,7 @@ export default function CraftsmanPaymentDialog({ craftsman, onClose, onSaved }) 
     payment_date: todayYmd(),
     amount: craftsman.cash_due > 0 ? craftsman.cash_due : '',
     method: 'cash',
+    bank_account_id: '',
     reference_no: '',
     notes: '',
   });
@@ -35,9 +38,17 @@ export default function CraftsmanPaymentDialog({ craftsman, onClose, onSaved }) 
       setErrors({ amount: 'Enter an amount above 0' });
       return;
     }
+    const bank = needsBankAccount(form.method);
+    if (bank && !form.bank_account_id) {
+      setErrors({ bank_account_id: 'Choose the bank account' });
+      return;
+    }
     setBusy(true);
     try {
-      const res = await api.post('/craftsman-payments', { ...form, craftsman_id: craftsman.id, amount: Number(form.amount) });
+      const res = await api.post('/craftsman-payments', {
+        ...form, craftsman_id: craftsman.id, amount: Number(form.amount), bank_account_id: bank ? form.bank_account_id : null,
+      });
+      refreshBankAccounts();
       notify(`Payment ${res.data.payment_no} saved`);
       onSaved(res.data);
     } catch (err) {
@@ -51,7 +62,7 @@ export default function CraftsmanPaymentDialog({ craftsman, onClose, onSaved }) 
   const after = Math.round((craftsman.cash_due - (Number(form.amount) || 0)) * 100) / 100;
 
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>
         Pay {craftsman.name}
         <Typography variant="body2" color="text.secondary">
@@ -75,6 +86,12 @@ export default function CraftsmanPaymentDialog({ craftsman, onClose, onSaved }) 
             </TextField>
           </Grid>
           <Grid size={{ xs: 6 }}><TextField label="Reference no." value={form.reference_no} onChange={set('reference_no')} /></Grid>
+          {needsBankAccount(form.method) && (
+            <Grid size={{ xs: 12 }}>
+              <BankAccountPicker label="From account" showBalance value={form.bank_account_id} error={errors.bank_account_id}
+                onChange={(id) => { setForm((f) => ({ ...f, bank_account_id: id })); setErrors((p) => ({ ...p, bank_account_id: undefined })); }} />
+            </Grid>
+          )}
           <Grid size={{ xs: 12 }}><TextField label="Note" value={form.notes} onChange={set('notes')} /></Grid>
         </Grid>
       </DialogContent>

@@ -17,6 +17,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { formatAmount, formatDate, formatDateTime, formatMoney } from '../../utils/format';
 import { formatWeight } from '../../utils/pricing';
 import { PAYMENT_METHODS, PAYMENT_STATUS, todayYmd } from '../../utils/payments';
+import { methodWithAccount } from '../../utils/bankAccounts';
 import PrintTagsDialog from '../tags/PrintTagsDialog';
 import SupplierPaymentDialog from './SupplierPaymentDialog';
 import TablePager, { usePagedRows } from '../../components/TablePager';
@@ -173,7 +174,7 @@ export default function PurchaseDetailPage() {
                 <TableRow key={p.payment_id}>
                   <TableCell>{p.payment_no}</TableCell>
                   <TableCell>{formatDate(p.payment_date)}</TableCell>
-                  <TableCell>{PAYMENT_METHODS[p.method]}{p.reference_no ? ` · ${p.reference_no}` : ''}</TableCell>
+                  <TableCell>{methodWithAccount(PAYMENT_METHODS[p.method], p)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(p.amount)}</TableCell>
                 </TableRow>
               ))}

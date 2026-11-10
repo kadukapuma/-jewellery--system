@@ -141,11 +141,18 @@ export class Effects {
         this.add('craftsman', `Owed to ${after.name}: ${money(before.cash_due)} → ${money(after.cash_due)}`, '/craftsmen');
       }
     }
-    for (const [account, label] of [['cash', 'Cash in hand'], ['bank', 'Bank']]) {
-      const d = round2(moneyAfter[account] - moneyBefore[account]);
+    // Cash, then each bank account (and bank money with no account), so the line names where the money moves.
+    const lines = [{ label: 'Cash in hand', cash: true, before: moneyBefore.cash, after: moneyAfter.cash }];
+    for (const acc of moneyAfter.accounts || []) {
+      const was = (moneyBefore.accounts || []).find((a) => a.id === acc.id);
+      lines.push({ label: `${acc.bank_name} · ${acc.account_name} ${acc.account_no}`, before: was?.balance || 0, after: acc.balance });
+    }
+    lines.push({ label: 'Bank (no account)', before: moneyBefore.unassigned || 0, after: moneyAfter.unassigned || 0 });
+    for (const l of lines) {
+      const d = round2(l.after - l.before);
       if (Math.abs(d) < 0.005) continue;
-      const hint = d < 0 ? (account === 'cash' ? 'pay this out of the drawer' : 'pay this from the bank') : 'this money comes back to the shop';
-      this.add('money', `${label} ${signed(d)} (${money(moneyBefore[account])} → ${money(moneyAfter[account])}): ${hint}`, '/finance');
+      const hint = d < 0 ? (l.cash ? 'pay this out of the drawer' : 'pay this from the bank') : 'this money comes back to the shop';
+      this.add('money', `${l.label} ${signed(d)} (${money(l.before)} → ${money(l.after)}): ${hint}`, '/cash-bank');
     }
   }
 }

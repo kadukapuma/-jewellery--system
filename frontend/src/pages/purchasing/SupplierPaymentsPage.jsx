@@ -16,6 +16,7 @@ import PageHeader from '../../components/PageHeader';
 import RecordActions from '../../components/RecordActions';
 import { formatDate, formatMoney } from '../../utils/format';
 import { PAYMENT_METHODS } from '../../utils/payments';
+import { methodWithAccount } from '../../utils/bankAccounts';
 import SupplierPaymentDialog from './SupplierPaymentDialog';
 
 function CancelPaymentDialog({ payment, onClose, onDone }) {
@@ -119,7 +120,7 @@ export default function SupplierPaymentsPage() {
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(p.payment_date)}</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{p.payment_no}</TableCell>
                   <TableCell>{p.supplier_name}</TableCell>
-                  <TableCell>{PAYMENT_METHODS[p.method]}{p.reference_no ? ` · ${p.reference_no}` : ''}</TableCell>
+                  <TableCell>{methodWithAccount(PAYMENT_METHODS[p.method], p)}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>{formatMoney(p.amount)}</TableCell>
                   <TableCell align="right">{p.status === 'active' && p.unallocated > 0 ? formatMoney(p.unallocated) : '—'}</TableCell>
                   <TableCell>

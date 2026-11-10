@@ -10,6 +10,7 @@ import { adminApproval } from '../../utils/changeGuard.js';
 import { moveToBin, snapshot } from '../../utils/recycleBin.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocatePayment, applyAdvances, recomputePurchase } from '../supplier-payments/supplier-payments.service.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
 
 const router = Router();
 
@@ -50,6 +51,7 @@ const createSchema = z.object({
     .object({
       amount: z.coerce.number().positive('Amount must be above 0').max(1e12),
       method: z.enum(PAYMENT_METHODS),
+      bank_account_id: bankAccountIdField,
       reference_no: optionalText(50),
     })
     .optional()
@@ -87,8 +89,10 @@ async function findPurchase(db, id) {
     [id],
   );
   const [payments] = await db.query(
-    `SELECT a.amount, sp.id AS payment_id, sp.payment_no, sp.payment_date, sp.method, sp.reference_no
+    `SELECT a.amount, sp.id AS payment_id, sp.payment_no, sp.payment_date, sp.method, sp.reference_no,
+            ${BANK_LABEL_SQL()} AS bank_account_label
      FROM supplier_payment_allocations a JOIN supplier_payments sp ON sp.id = a.payment_id
+     ${BANK_JOIN_SQL('sp')}
      WHERE a.purchase_id = ? AND sp.status = 'active' ORDER BY sp.payment_date, sp.id`,
     [id],
   );
@@ -214,9 +218,10 @@ router.post('/', requirePermission('purchases.create'), async (req, res) => {
     if (data.payment) {
       const paymentNo = await nextDocumentNumber(conn, 'SPY');
       const [pay] = await conn.query(
-        `INSERT INTO supplier_payments (payment_no, supplier_id, payment_date, amount, method, reference_no, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [paymentNo, supplier.id, data.purchase_date, data.payment.amount, data.payment.method, data.payment.reference_no,
+        `INSERT INTO supplier_payments (payment_no, supplier_id, payment_date, amount, method, bank_account_id, reference_no, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [paymentNo, supplier.id, data.purchase_date, data.payment.amount, data.payment.method,
+          await resolveBankAccount(conn, data.payment.method, data.payment.bank_account_id), data.payment.reference_no,
           `Paid with ${purchaseNo}`, req.user.id],
       );
       await allocatePayment(conn, { paymentId: pay.insertId, supplierId: supplier.id, amount: data.payment.amount, firstPurchaseId: purchaseId });

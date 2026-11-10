@@ -16,6 +16,8 @@ import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { gold, stone } from '../../theme';
 import CustomerPicker from '../sales/CustomerPicker';
 import { heldOfKarat } from '../workshop/heldGold';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount } from '../../utils/bankAccounts';
 
 const round2 = (n) => Math.round(n * 100) / 100;
 const round3 = (n) => Math.round(n * 1000) / 1000;
@@ -61,6 +63,12 @@ function PaymentFields({ f, prefix = '' }) {
         {f.field(n('method'), 'Paid by', { select: true, children: Object.entries(PAYMENT_METHODS).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>) })}
       </Grid>
       <Grid size={{ xs: 12, sm: 6 }}>{f.field(n('reference_no'), f.form[n('method')] === 'cheque' ? 'Cheque no.' : 'Reference no.')}</Grid>
+      {needsBankAccount(f.form[n('method')]) && (
+        <Grid size={{ xs: 12 }}>
+          <BankAccountPicker label="Into account" value={f.form[n('bank_account_id')] || ''} error={f.errors[n('bank_account_id')]}
+            onChange={(id) => { f.setForm((x) => ({ ...x, [n('bank_account_id')]: id })); f.setErrors((x) => ({ ...x, [n('bank_account_id')]: undefined })); }} />
+        </Grid>
+      )}
       {f.form[n('method')] === 'cheque' && <Grid size={{ xs: 12, sm: 6 }}>{f.field(n('cheque_date'), 'Cheque date', dateProps)}</Grid>}
     </>
   );
@@ -69,6 +77,7 @@ function PaymentFields({ f, prefix = '' }) {
 const paymentBody = (form, value, prefix = '') => (value > 0 ? {
   amount: value,
   method: form[`${prefix}method`],
+  bank_account_id: needsBankAccount(form[`${prefix}method`]) ? form[`${prefix}bank_account_id`] || null : null,
   reference_no: form[`${prefix}reference_no`],
   cheque_date: form[`${prefix}method`] === 'cheque' ? form[`${prefix}cheque_date`] || null : null,
 } : null);

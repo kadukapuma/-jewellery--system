@@ -7,6 +7,7 @@ import { nextDocumentNumber } from '../../utils/sequences.js';
 import { calcOldGoldValue } from '../../services/pricing.js';
 import { getCurrentPrice } from '../gold-prices/gold-prices.service.js';
 import { grams, money } from '../../utils/cancelEffects.js';
+import { resolveBankAccount } from '../../utils/bankAccount.js';
 
 // Old gold: a customer's old jewellery taken in by the shop. Every piece is priced at the day's
 // gram price less the deduction % (setting old_gold_deduction_percent) and becomes a stock item
@@ -85,18 +86,20 @@ export async function priceOldGoldLines(db, lines, req = null) {
 // receipt (method 'old_gold'). Allocation of that receipt is left to the caller.
 // Call inside a transaction. Returns { id, receipt_no, total_value, payment_id }.
 export async function createOldGoldReceipt(conn, req, {
-  date, customerId = null, mode, payoutMethod = null, payoutReference = null, saleId = null, lines, notes = null,
+  date, customerId = null, mode, payoutMethod = null, payoutReference = null, payoutBankAccountId = null, saleId = null, lines, notes = null,
 }) {
   if (mode === 'credit' && !customerId) throw new HttpError(400, 'Choose the customer to give the credit to');
   await assertDayOpen(conn, date);
   const priced = await priceOldGoldLines(conn, lines, req);
 
+  const payout = mode === 'cash' ? payoutMethod || 'cash' : null;
+  const bankAccountId = payout ? await resolveBankAccount(conn, payout, payoutBankAccountId, 'bank account to pay from') : null;
   const receiptNo = await nextDocumentNumber(conn, 'OGR');
   const [result] = await conn.query(
-    `INSERT INTO old_gold_receipts (receipt_no, receipt_date, customer_id, mode, payout_method, payout_reference, sale_id,
+    `INSERT INTO old_gold_receipts (receipt_no, receipt_date, customer_id, mode, payout_method, payout_reference, bank_account_id, sale_id,
                                     total_net_weight_g, total_value, notes, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [receiptNo, date, customerId, mode, mode === 'cash' ? payoutMethod || 'cash' : null, mode === 'cash' ? payoutReference : null,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [receiptNo, date, customerId, mode, payout, mode === 'cash' ? payoutReference : null, bankAccountId,
       saleId, priced.total_net_weight_g, priced.total_value, notes, req.user.id],
   );
   const receiptId = result.insertId;

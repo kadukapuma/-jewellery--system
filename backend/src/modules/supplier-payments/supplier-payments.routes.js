@@ -10,6 +10,7 @@ import { cancelReason, runCancel, sendCancel } from '../../utils/cancelEffects.j
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
 import { allocatePayment, recomputePurchase } from './supplier-payments.service.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ const createSchema = z.object({
   payment_date: dateSchema,
   amount: z.coerce.number({ error: 'Enter the amount' }).positive('Amount must be above 0').max(1e12),
   method: z.enum(PAYMENT_METHODS, { error: 'Choose how it was paid' }),
+  bank_account_id: bankAccountIdField,
   reference_no: optionalText(50),
   cheque_date: dateSchema.optional().nullable().or(z.literal('').transform(() => null)),
   notes: optionalText(255),
@@ -33,10 +35,12 @@ const listSchema = z.object({
 
 const PAYMENT_SELECT = `
   SELECT sp.*, s.name AS supplier_name, u.name AS created_by_name,
-         COALESCE((SELECT SUM(a.amount) FROM supplier_payment_allocations a WHERE a.payment_id = sp.id), 0) AS allocated
+         COALESCE((SELECT SUM(a.amount) FROM supplier_payment_allocations a WHERE a.payment_id = sp.id), 0) AS allocated,
+         ${BANK_LABEL_SQL()} AS bank_account_label
   FROM supplier_payments sp
   JOIN suppliers s ON s.id = sp.supplier_id
-  JOIN users u ON u.id = sp.created_by`;
+  JOIN users u ON u.id = sp.created_by
+  ${BANK_JOIN_SQL('sp')}`;
 
 async function findPayment(db, id) {
   const [[payment]] = await db.query(`${PAYMENT_SELECT} WHERE sp.id = ?`, [id]);
@@ -88,9 +92,10 @@ router.post('/', requirePermission('supplier_payments.create'), async (req, res)
     }
     const paymentNo = await nextDocumentNumber(conn, 'SPY');
     const [result] = await conn.query(
-      `INSERT INTO supplier_payments (payment_no, supplier_id, payment_date, amount, method, reference_no, cheque_date, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [paymentNo, supplier.id, data.payment_date, data.amount, data.method, data.reference_no, data.cheque_date ?? null, data.notes, req.user.id],
+      `INSERT INTO supplier_payments (payment_no, supplier_id, payment_date, amount, method, bank_account_id, reference_no, cheque_date, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [paymentNo, supplier.id, data.payment_date, data.amount, data.method, await resolveBankAccount(conn, data.method, data.bank_account_id),
+        data.reference_no, data.cheque_date ?? null, data.notes, req.user.id],
     );
     await allocatePayment(conn, { paymentId: result.insertId, supplierId: supplier.id, amount: data.amount, firstPurchaseId: data.purchase_id });
     await writeAudit(conn, req, { action: 'create', table: 'supplier_payments', recordId: result.insertId, newValues: { ...data, payment_no: paymentNo } });

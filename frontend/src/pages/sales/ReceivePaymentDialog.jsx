@@ -13,6 +13,8 @@ import { PAYMENT_METHODS, todayYmd } from '../../utils/payments';
 import { stone } from '../../theme';
 import CustomerPicker from './CustomerPicker';
 import TablePager, { usePagedRows } from '../../components/TablePager';
+import BankAccountPicker from '../../components/BankAccountPicker';
+import { needsBankAccount, refreshBankAccounts } from '../../utils/bankAccounts';
 
 // Money from a customer for credit bills / instalments. Settles the chosen bill first, then the oldest.
 export default function ReceivePaymentDialog({ customer: initialCustomer, sale, onClose, onSaved }) {
@@ -20,7 +22,7 @@ export default function ReceivePaymentDialog({ customer: initialCustomer, sale, 
   const [customer, setCustomer] = useState(initialCustomer || (sale ? { id: sale.customer_id, name: sale.customer_name, balance: null } : null));
   const [openBills, setOpenBills] = useState([]);
   const [form, setForm] = useState({
-    payment_date: todayYmd(), amount: sale ? sale.balance : '', method: 'cash', reference_no: '', cheque_date: '', notes: '',
+    payment_date: todayYmd(), amount: sale ? sale.balance : '', method: 'cash', bank_account_id: '', reference_no: '', cheque_date: '', notes: '',
   });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
@@ -61,6 +63,7 @@ export default function ReceivePaymentDialog({ customer: initialCustomer, sale, 
     const e = {};
     if (!customer) e.customer = 'Choose a customer';
     if (!(Number(form.amount) > 0)) e.amount = 'Enter an amount above 0';
+    if (needsBankAccount(form.method) && !form.bank_account_id) e.bank_account_id = 'Choose the bank account';
     setErrors(e);
     if (Object.keys(e).length) { if (e.customer) setError(e.customer); return; }
     setBusy(true);
@@ -68,7 +71,9 @@ export default function ReceivePaymentDialog({ customer: initialCustomer, sale, 
       const res = await api.post('/customer-payments', {
         ...form, customer_id: customer.id, amount: Number(form.amount),
         cheque_date: form.method === 'cheque' ? form.cheque_date : null, sale_id: sale?.id ?? null,
+        bank_account_id: needsBankAccount(form.method) ? form.bank_account_id : null,
       });
+      refreshBankAccounts();
       notify(`Receipt ${res.data.receipt_no} saved`);
       onSaved(res.data);
     } catch (err) {
@@ -109,6 +114,12 @@ export default function ReceivePaymentDialog({ customer: initialCustomer, sale, 
                 {field('method', 'Paid by', { select: true, children: Object.entries(PAYMENT_METHODS).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>) })}
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>{field('reference_no', form.method === 'cheque' ? 'Cheque no.' : 'Reference no.')}</Grid>
+              {needsBankAccount(form.method) && (
+                <Grid size={{ xs: 12 }}>
+                  <BankAccountPicker label="Into account" value={form.bank_account_id} error={errors.bank_account_id}
+                    onChange={(id) => { setForm((f) => ({ ...f, bank_account_id: id })); setErrors((p) => ({ ...p, bank_account_id: undefined })); }} />
+                </Grid>
+              )}
               {form.method === 'cheque' && <Grid size={{ xs: 12, sm: 6 }}>{field('cheque_date', 'Cheque date', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}</Grid>}
               <Grid size={{ xs: 12 }}>{field('notes', 'Note', { multiline: true, minRows: 2 })}</Grid>
             </FormSection>

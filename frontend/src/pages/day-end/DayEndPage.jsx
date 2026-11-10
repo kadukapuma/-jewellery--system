@@ -507,6 +507,12 @@ function DayView({ data }) {
                     })),
                     !moves.length && { label: 'No money moved', value: '', indent: true, muted: true },
                     { label: acc === 'cash' ? 'Expected cash in drawer' : 'Expected bank balance', value: formatMoney(a.closing), total: true, big: true },
+                    ...(acc === 'bank' ? (s.cash.bank_accounts || []).map((b) => ({
+                      label: `${b.label}${b.money_in || b.money_out ? ` (+${formatMoney(b.money_in)} / −${formatMoney(b.money_out)})` : ''}`,
+                      value: formatMoney(b.closing),
+                      indent: true,
+                      muted: !b.money_in && !b.money_out,
+                    })) : []),
                     acc === 'cash' && closing && { label: 'Cash counted', value: formatMoney(closing.counted_cash) },
                     acc === 'cash' && closing && { label: 'Short / over', value: diffText(closing.cash_difference), color: diffColor(closing.cash_difference) },
                   ]}

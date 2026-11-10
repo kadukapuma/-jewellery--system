@@ -9,6 +9,7 @@ import { writeAudit } from '../../utils/audit.js';
 import { cancelReason, money, runCancel, sendCancel } from '../../utils/cancelEffects.js';
 import { cancelledRecordRoutes } from '../../utils/cancelledRecords.js';
 import { nextDocumentNumber } from '../../utils/sequences.js';
+import { BANK_JOIN_SQL, BANK_LABEL_SQL, bankAccountIdField, resolveBankAccount } from '../../utils/bankAccount.js';
 import { allocateCustomerPayment, recomputeSale } from './customer-payments.service.js';
 
 const router = Router();
@@ -18,6 +19,7 @@ const createSchema = z.object({
   payment_date: dateSchema,
   amount: z.coerce.number({ error: 'Enter the amount' }).positive('Amount must be above 0').max(1e12),
   method: z.enum(PAYMENT_METHODS, { error: 'Choose how it was paid' }),
+  bank_account_id: bankAccountIdField,
   reference_no: optionalText(50),
   cheque_date: dateSchema.optional().nullable().or(z.literal('').transform(() => null)),
   notes: optionalText(255),
@@ -35,11 +37,13 @@ const listSchema = z.object({
 
 const PAYMENT_SELECT = `
   SELECT p.*, c.name AS customer_name, c.phone AS customer_phone, s.invoice_no AS counter_invoice_no, u.name AS created_by_name,
-         COALESCE((SELECT SUM(a.amount) FROM customer_payment_allocations a WHERE a.payment_id = p.id), 0) AS allocated
+         COALESCE((SELECT SUM(a.amount) FROM customer_payment_allocations a WHERE a.payment_id = p.id), 0) AS allocated,
+         ${BANK_LABEL_SQL()} AS bank_account_label
   FROM customer_payments p
   LEFT JOIN customers c ON c.id = p.customer_id
   LEFT JOIN sales s ON s.id = p.sale_id
-  JOIN users u ON u.id = p.created_by`;
+  JOIN users u ON u.id = p.created_by
+  ${BANK_JOIN_SQL('p')}`;
 
 async function findPayment(db, id) {
   const [[payment]] = await db.query(`${PAYMENT_SELECT} WHERE p.id = ?`, [id]);
@@ -92,11 +96,12 @@ router.post('/', requirePermission('customer_payments.create'), async (req, res)
       const [[s]] = await conn.query('SELECT customer_id FROM sales WHERE id = ?', [data.sale_id]);
       if (s?.customer_id !== customer.id) throw new HttpError(400, 'That bill is not for this customer');
     }
+    data.bank_account_id = await resolveBankAccount(conn, data.method, data.bank_account_id);
     const receiptNo = await nextDocumentNumber(conn, 'RCP');
     const [result] = await conn.query(
-      `INSERT INTO customer_payments (receipt_no, customer_id, payment_date, amount, method, reference_no, cheque_date, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [receiptNo, customer.id, data.payment_date, data.amount, data.method, data.reference_no, data.cheque_date ?? null, data.notes, req.user.id],
+      `INSERT INTO customer_payments (receipt_no, customer_id, payment_date, amount, method, bank_account_id, reference_no, cheque_date, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [receiptNo, customer.id, data.payment_date, data.amount, data.method, data.bank_account_id, data.reference_no, data.cheque_date ?? null, data.notes, req.user.id],
     );
     await allocateCustomerPayment(conn, { paymentId: result.insertId, customerId: customer.id, amount: data.amount, firstSaleId: data.sale_id });
     await writeAudit(conn, req, { action: 'create', table: 'customer_payments', recordId: result.insertId, newValues: { ...data, receipt_no: receiptNo } });
