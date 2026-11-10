@@ -9,6 +9,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ReceiptIcon from '@mui/icons-material/ReceiptLongOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
+import DeleteButton from '../../components/DeleteButton';
 import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -137,8 +138,9 @@ export default function SuppliersPage() {
                     {can('suppliers.edit') && (
                       <Tooltip title="Edit"><IconButton size="small" onClick={() => setEditing(s)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                     )}
-                    {can('suppliers.delete') && !s.purchase_count && !s.payment_count && (
-                      <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(s)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    {can('suppliers.delete') && (
+                      <DeleteButton onClick={() => setDeleting(s)}
+                        blockedReason={s.purchase_count || s.payment_count ? 'this supplier has purchases or payments. Mark them Inactive instead.' : null} />
                     )}
                   </TableCell>
                 </TableRow>

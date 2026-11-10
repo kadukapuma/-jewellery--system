@@ -3,6 +3,7 @@ import {
   Box, Button, Card, Checkbox, Chip, Grid, IconButton, InputAdornment, LinearProgress, MenuItem, Table, TableBody,
   TableCell, TableContainer, TableHead, TablePagination, TableRow, Tooltip, Typography,
 } from '@mui/material';
+import DeleteButton from '../../components/DeleteButton';
 import TextField from '../../components/TextField';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
@@ -29,6 +30,16 @@ const STATUS = {
   with_craftsman: { label: 'With craftsman', color: 'warning' },
   inactive: { label: 'Inactive', color: 'default' },
 };
+
+// Why an item cannot be deleted from here (null = it can). Stock history stays correct this way.
+function itemDeleteBlock(i) {
+  if (i.status === 'sold') return 'it is on a bill. Cancel the bill first, or mark the item Inactive.';
+  if (i.source === 'purchase') return 'it came from a purchase. Delete that purchase instead (from Purchases).';
+  if (i.source === 'craft') return 'it was made by a craftsman and has job history. Mark it Inactive instead.';
+  if (i.source === 'old_gold') return 'it came from old gold taken from a customer. Cancel that old gold receipt instead.';
+  if (i.status === 'with_craftsman') return 'it is with a craftsman. Cancel the craft job first.';
+  return null;
+}
 
 export default function ItemsPage() {
   const { can, user } = useAuth();
@@ -238,9 +249,7 @@ export default function ItemsPage() {
                     {can('items.edit') && !['sold', 'with_craftsman'].includes(i.status) && (
                       <Tooltip title="Edit"><IconButton size="small" onClick={() => setEditing(i)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                     )}
-                    {can('items.delete') && i.source === 'opening' && i.status !== 'sold' && (
-                      <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(i)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
-                    )}
+                    {can('items.delete') && <DeleteButton onClick={() => setDeleting(i)} blockedReason={itemDeleteBlock(i)} />}
                   </TableCell>
                 </TableRow>
               ))}

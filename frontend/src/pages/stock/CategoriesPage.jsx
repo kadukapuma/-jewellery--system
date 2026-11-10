@@ -6,6 +6,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
+import DeleteButton from '../../components/DeleteButton';
 import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -94,8 +95,9 @@ export default function CategoriesPage() {
                     {can('categories.edit') && (
                       <Tooltip title="Edit"><IconButton size="small" onClick={() => setEditing(c)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                     )}
-                    {can('categories.delete') && c.item_count === 0 && (
-                      <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(c)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    {can('categories.delete') && (
+                      <DeleteButton onClick={() => setDeleting(c)}
+                        blockedReason={c.item_count > 0 ? `${c.item_count} item(s) use this category. Mark it Inactive to stop using it.` : null} />
                     )}
                   </TableCell>
                 </TableRow>

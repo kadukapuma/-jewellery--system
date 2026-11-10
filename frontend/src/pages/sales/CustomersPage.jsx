@@ -9,6 +9,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ReceiptIcon from '@mui/icons-material/ReceiptLongOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
+import DeleteButton from '../../components/DeleteButton';
 import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -126,8 +127,9 @@ export default function CustomersPage() {
                     {can('customer_payments.view') && <Tooltip title="Statement"><IconButton size="small" onClick={() => setStatementFor(c)}><ReceiptIcon fontSize="small" /></IconButton></Tooltip>}
                     {can('customer_payments.create') && <Tooltip title="Receive payment"><IconButton size="small" onClick={() => setReceivingFor(c)}><PaymentsIcon fontSize="small" /></IconButton></Tooltip>}
                     {can('customers.edit') && <Tooltip title="Edit"><IconButton size="small" onClick={() => setEditing(c)}><EditIcon fontSize="small" /></IconButton></Tooltip>}
-                    {can('customers.delete') && !c.sale_count && !c.payment_count && (
-                      <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(c)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    {can('customers.delete') && (
+                      <DeleteButton onClick={() => setDeleting(c)}
+                        blockedReason={c.sale_count || c.payment_count ? 'this customer has bills or receipts, which must keep their name.' : null} />
                     )}
                   </TableCell>
                 </TableRow>

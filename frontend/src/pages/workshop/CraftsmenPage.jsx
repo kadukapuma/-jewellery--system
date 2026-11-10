@@ -7,6 +7,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import AccountIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import DeleteButton from '../../components/DeleteButton';
 import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -128,8 +129,9 @@ export default function CraftsmenPage() {
                     {can('craftsmen.edit') && (
                       <Tooltip title="Edit"><IconButton size="small" onClick={() => setEditing(c)}><EditIcon fontSize="small" /></IconButton></Tooltip>
                     )}
-                    {can('craftsmen.delete') && !c.job_count && !c.payment_count && !c.ledger_count && (
-                      <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleting(c)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    {can('craftsmen.delete') && (
+                      <DeleteButton onClick={() => setDeleting(c)}
+                        blockedReason={c.job_count || c.payment_count || c.ledger_count ? 'this craftsman has jobs, payments or gold entries. Mark them Inactive instead.' : null} />
                     )}
                   </TableCell>
                 </TableRow>

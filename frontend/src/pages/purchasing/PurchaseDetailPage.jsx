@@ -7,6 +7,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LabelIcon from '@mui/icons-material/LocalOfferOutlined';
 import PaymentsIcon from '@mui/icons-material/PaymentsOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
+import DeleteButton from '../../components/DeleteButton';
 import api, { APPROVAL_MESSAGE, errorMessage, isPendingApproval, withReason } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useNotify } from '../../components/Notify';
@@ -189,8 +190,10 @@ export default function PurchaseDetailPage() {
         <Typography variant="caption" sx={{ flexGrow: 1 }}>
           Entered by {purchase.created_by_name} on {formatDateTime(purchase.created_at)}{purchase.notes ? ` · ${purchase.notes}` : ''}
         </Typography>
-        {can('purchases.delete') && purchase.payments.length === 0 && (
-          <Button color="error" startIcon={<DeleteIcon />} onClick={() => setDeleting(true)}>Delete purchase</Button>
+        {can('purchases.delete') && (
+          <DeleteButton button label="Delete purchase" onClick={() => setDeleting(true)}
+            blockedReason={purchase.payments.length > 0
+              ? 'it has payments to the supplier. Cancel them first (in Supplier Payments).' : null} />
         )}
       </Box>
 
