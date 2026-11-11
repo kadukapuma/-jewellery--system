@@ -1187,3 +1187,13 @@ SELECT cm.id AS craftsman_id, cm.name, cm.phone,
                    WHERE p.craftsman_id = cm.id AND p.status = 'active'), 0)
          AS cash_due
 FROM craftsmen cm;
+
+-- =====================================================================
+-- MIGRATIONS  - which files in database/migrations/ this database has had.
+--   npm run db:init records them all (this file already includes them);
+--   npm run db:migrate runs any not listed here and adds them.
+-- =====================================================================
+CREATE TABLE schema_migrations (
+  filename    VARCHAR(255) NOT NULL PRIMARY KEY,
+  applied_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;

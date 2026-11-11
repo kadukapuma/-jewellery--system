@@ -30,6 +30,23 @@ frontend/             React app -> http://localhost:5173
 
 `npm run db:fresh` deletes the database and creates it again from `database/schema.sql`.
 
+### Database updates (migrations)
+
+Changes to an existing database live in `database/migrations/` (one `.sql` file each, named `YYYY-MM-DD-what.sql`).
+The `schema_migrations` table records which ones a database has had, so each runs only once.
+
+```bash
+cd backend
+npm run db:migrate                 # run every migration this database hasn't had yet
+npm run db:migrate -- --status     # list applied / pending, change nothing
+npm run db:migrate -- --mark-all   # record all as applied WITHOUT running them
+npm run db:migrate -- --mark <file.sql>   # record one as applied without running it
+```
+
+- A new database (`db:init` / `db:fresh`) records every current migration as applied, because `schema.sql` already has them.
+- A database you updated by hand before this existed: run `--mark-all` once, then use `db:migrate` from then on.
+- When you change the database: add a new migration file **and** make the same change in `schema.sql`.
+
 ## Modules
 
 | # | Module | Status |
