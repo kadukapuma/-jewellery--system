@@ -3,6 +3,8 @@ import {
   Box, Paper, Typography, IconButton, TextField, Chip, Button, CircularProgress, Tooltip, Grow,
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
+import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
@@ -142,7 +144,16 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const [meta, setMeta] = useState(null);
-  const [configured, setConfigured] = useState(null);
+  const [configured, setConfigured] = useState(null); // help desk switched on?
+  const [caps, setCaps] = useState([]); // what this user may ask the assistant
+  const [ready, setReady] = useState(false);
+  const [expanded, setExpanded] = useState(() => {
+    try { return localStorage.getItem('aureon_chat_expanded') === 'true'; } catch { return false; }
+  });
+  const toggleExpanded = () => setExpanded((v) => {
+    try { localStorage.setItem('aureon_chat_expanded', String(!v)); } catch {}
+    return !v;
+  });
   const started = useRef(false);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
@@ -165,29 +176,58 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
     await say(text);
   }, [say]);
 
-  // First open: greet and check the help desk is switched on.
+  // First open: greet, load what this user may ask, and check the help desk is switched on.
   useEffect(() => {
     if (!open || started.current) return;
     started.current = true;
     onRobot?.('hi');
     (async () => {
       const first = user?.name?.split(' ')[0] || user?.username || 'there';
-      await say(`Hi ${first}! 👋 I'm your help desk assistant. I can send a problem or request to your system provider and keep you updated on it.`);
-      try {
-        const { data } = await api.get('/helpdesk/status');
-        setConfigured(data.data.configured);
-        if (!data.data.configured) {
-          await say('The help desk is not configured yet. Please contact your system provider.', { tone: 'error' });
-          return;
-        }
-      } catch (err) {
-        setConfigured(false);
-        await say(errorMessage(err), { tone: 'error' });
-        return;
-      }
-      await showMenu('What would you like to do?');
+      await say(`Hi ${first}! 👋 I'm your shop assistant. Ask me about sales, stock, gold prices, customers and more — I'll only show what your role allows.`);
+      const [capsRes, deskRes] = await Promise.allSettled([
+        api.get('/assistant/capabilities'),
+        canView || canCreate ? api.get('/helpdesk/status') : Promise.resolve(null),
+      ]);
+      if (capsRes.status === 'fulfilled') setCaps(capsRes.value.data.data || []);
+      else await say(errorMessage(capsRes.reason), { tone: 'error' });
+      setConfigured(deskRes.status === 'fulfilled' && !!deskRes.value?.data?.data?.configured);
+      setReady(true);
+      await showMenu('What would you like to know? Type a question or tap one below.');
     })();
-  }, [open, onRobot, say, showMenu, user]);
+  }, [open, onRobot, say, showMenu, user, canView, canCreate]);
+
+  // ---- Ask the assistant ------------------------------------------------
+  const ask = async (text) => {
+    const q = String(text || '').trim();
+    if (!q) return;
+    push(msg('user', q));
+    setInput('');
+    setStep('busy');
+    setTyping(true);
+    try {
+      const { data } = await api.post('/assistant/ask', { text: q });
+      setTyping(false);
+      const a = data.data || {};
+      push(msg('bot', a.reply, {
+        tone: a.denied ? 'error' : undefined,
+        cards: a.cards, list: a.list, note: a.note, suggestions: a.suggestions,
+      }));
+      if (a.cards?.length || a.list?.length) onRobot?.('jump');
+    } catch (err) {
+      setTyping(false);
+      push(msg('bot', errorMessage(err), { tone: 'error' }));
+    }
+    setStep('menu');
+  };
+
+  // Examples like "Balance of <customer name>" fill the box so the user can finish typing.
+  const pickSuggestion = (s) => {
+    const cut = s.indexOf('<');
+    if (cut >= 0) {
+      setInput(s.slice(0, cut));
+      setTimeout(() => inputRef.current?.focus(), 30);
+    } else ask(s);
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -243,7 +283,9 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
   const submitText = async () => {
     const text = input.trim();
     if (!text) return;
-    if (step === 'title') {
+    if (step === 'menu') {
+      await ask(text);
+    } else if (step === 'title') {
       if (text.length > 255) return say('Please keep the title under 255 characters.', { tone: 'error' });
       push(msg('user', text));
       setDraft((d) => ({ ...d, title: text }));
@@ -361,18 +403,20 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
   };
 
   // ---- UI --------------------------------------------------------------
-  const textStep = step === 'title' || step === 'description';
+  const textStep = step === 'title' || step === 'description' || (ready && (step === 'menu' || step === 'busy'));
   const chipSx = { bgcolor: '#fff', border: `1px solid ${robot.emerald}`, color: robot.teal, fontWeight: 600, '&:hover': { bgcolor: robot.mint } };
+  const quickAsks = caps.filter((c) => c.id !== 'help' && c.id !== 'whoami').map((c) => c.examples[0]);
 
   let actions = null;
-  if (configured && !typing) {
+  if (ready && !typing) {
     if (step === 'menu') {
       actions = (
         <>
-          {canCreate && <Chip label="🛠 Report a problem" onClick={startReport} sx={chipSx} />}
-          {canView && <Chip label="📋 My requests" onClick={showRequests} sx={chipSx} />}
-          {!canCreate && !canView && (
-            <Typography sx={{ fontSize: 12, color: robot.muted }}>You do not have access to the help desk.</Typography>
+          {quickAsks.slice(0, 6).map((q) => <Chip key={q} size="small" label={q} onClick={() => pickSuggestion(q)} sx={chipSx} />)}
+          {configured && canCreate && <Chip size="small" label="🛠 Report a problem" onClick={startReport} sx={chipSx} />}
+          {configured && canView && <Chip size="small" label="📋 My requests" onClick={showRequests} sx={chipSx} />}
+          {!quickAsks.length && !(configured && (canCreate || canView)) && (
+            <Typography sx={{ fontSize: 12, color: robot.muted }}>Your role has no shop data access yet — ask your admin.</Typography>
           )}
         </>
       );
@@ -422,8 +466,12 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
           position: 'fixed',
           right: { xs: 8, sm: 24 },
           bottom: { xs: 128, sm: 150 },
-          width: { xs: 'calc(100vw - 16px)', sm: 370 },
-          height: { xs: 'min(560px, calc(100vh - 150px))', sm: 'min(560px, calc(100vh - 180px))' },
+          width: { xs: 'calc(100vw - 16px)', sm: expanded ? 'min(720px, calc(100vw - 48px))' : 460 },
+          height: {
+            xs: 'calc(100vh - 150px)',
+            sm: expanded ? 'calc(100vh - 180px)' : 'min(680px, calc(100vh - 180px))',
+          },
+          transition: 'width .25s ease, height .25s ease',
           display: open ? 'flex' : 'none',
           flexDirection: 'column',
           borderRadius: 3,
@@ -434,11 +482,16 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
       >
         {/* Header */}
         <Box sx={{ px: 2, py: 1.25, display: 'flex', alignItems: 'center', gap: 1, background: `linear-gradient(135deg, ${robot.visor}, ${robot.visorLift})`, color: '#fff', borderBottom: `2px solid ${robot.glow}`, boxShadow: `0 2px 12px ${robot.glow}33` }}>
-          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: configured === false ? '#FF6B6B' : robot.glow, boxShadow: `0 0 8px ${configured === false ? '#FF6B6B' : robot.glow}` }} />
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: robot.glow, boxShadow: `0 0 8px ${robot.glow}` }} />
           <Box sx={{ flex: 1 }}>
-            <Typography sx={{ fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>Help Desk</Typography>
-            <Typography sx={{ fontSize: 11.5, color: robot.glow, opacity: 0.85 }}>Requests go straight to your system provider</Typography>
+            <Typography sx={{ fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>Shop Assistant</Typography>
+            <Typography sx={{ fontSize: 11.5, color: robot.glow, opacity: 0.85 }}>Ask about sales, stock, gold prices…</Typography>
           </Box>
+          <Tooltip title={expanded ? 'Smaller' : 'Bigger'}>
+            <IconButton size="small" onClick={toggleExpanded} sx={{ color: '#fff', display: { xs: 'none', sm: 'inline-flex' } }} aria-label={expanded ? 'Make chat smaller' : 'Make chat bigger'}>
+              {expanded ? <CloseFullscreenRoundedIcon fontSize="small" /> : <OpenInFullRoundedIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
           <IconButton size="small" onClick={onClose} sx={{ color: '#fff' }} aria-label="Close help desk">
             <CloseRoundedIcon fontSize="small" />
           </IconButton>
@@ -453,7 +506,7 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
                 : bot ? { bgcolor: '#fff', color: robot.ink, border: `1px solid ${robot.line}` }
                   : { bgcolor: robot.teal, color: '#fff', border: 'none' };
             return (
-              <Box key={m.id} sx={{ alignSelf: bot ? 'flex-start' : 'flex-end', maxWidth: m.requests || m.detail || m.summary ? '100%' : '85%', width: m.requests || m.detail || m.summary ? '100%' : 'auto' }}>
+              <Box key={m.id} sx={{ alignSelf: bot ? 'flex-start' : 'flex-end', maxWidth: m.requests || m.detail || m.summary || m.cards || m.list ? '100%' : '85%', width: m.requests || m.detail || m.summary || m.cards?.length || m.list?.length ? '100%' : 'auto' }}>
                 <Box sx={{ px: 1.5, py: 1, borderRadius: 2.5, borderTopLeftRadius: bot ? 6 : undefined, borderTopRightRadius: bot ? undefined : 6, fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...tone }}>
                   {m.text}
                   {m.summary && (
@@ -470,6 +523,32 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
                     </Box>
                   )}
                   {m.detail && <RequestDetail r={m.detail} />}
+                  {m.cards?.length > 0 && (
+                    <Box sx={{ mt: 1, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 1.25, rowGap: 0.25, p: 1, borderRadius: 1.5, bgcolor: robot.body, fontSize: 12.5 }}>
+                      {m.cards.map((c) => (
+                        <Box key={c.label} sx={{ display: 'contents' }}>
+                          <Box sx={{ color: robot.muted }}>{c.label}</Box>
+                          <Box sx={{ fontWeight: 600, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.value}</Box>
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                  {m.list?.length > 0 && (
+                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                      {m.list.map((l) => (
+                        <Box key={l.ask} onClick={() => !typing && ask(l.ask)} sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${robot.line}`, bgcolor: '#fff', cursor: 'pointer', '&:hover': { borderColor: robot.emerald, bgcolor: robot.mint } }}>
+                          <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{l.title}</Typography>
+                          <Typography sx={{ fontSize: 11.5, color: robot.muted }}>{l.subtitle}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                  {m.note && <Typography sx={{ mt: 0.75, fontSize: 12, color: '#8A5A00' }}>{m.note}</Typography>}
+                  {m.suggestions?.length > 0 && (
+                    <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {m.suggestions.map((s) => <Chip key={s} size="small" label={s} onClick={() => !typing && pickSuggestion(s)} sx={chipSx} />)}
+                    </Box>
+                  )}
                 </Box>
               </Box>
             );
@@ -490,7 +569,11 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
 
         {/* Quick replies / actions */}
         {actions && (
-          <Box sx={{ px: 1.5, py: 1, display: 'flex', flexWrap: 'wrap', gap: 0.75, borderTop: `1px solid ${robot.line}`, bgcolor: '#fff' }}>
+          <Box
+            sx={{
+              px: 1.5, pt: 1, pb: textStep ? 0.25 : 1, display: 'flex', flexWrap: 'wrap', gap: 0.75, borderTop: `1px solid ${robot.line}`, bgcolor: '#fff',
+            }}
+          >
             {actions}
           </Box>
         )}
@@ -500,16 +583,29 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
           <Box
             component="form"
             onSubmit={(e) => { e.preventDefault(); submitText(); }}
-            sx={{ p: 1, display: 'flex', alignItems: 'flex-end', gap: 0.5, borderTop: `1px solid ${robot.line}`, bgcolor: '#fff' }}
+            sx={{ px: 1.5, pt: actions ? 0.75 : 1.25, pb: 1.25, display: 'flex', alignItems: 'flex-end', gap: 0.75, borderTop: actions ? 'none' : `1px solid ${robot.line}`, bgcolor: '#fff' }}
           >
             <TextField
               inputRef={inputRef}
-              sx={{ '& .MuiOutlinedInput-root.Mui-focused fieldset': { borderColor: robot.emerald } }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 5,
+                  bgcolor: robot.body,
+                  fontSize: 14,
+                  pl: 0.5,
+                  transition: 'box-shadow .2s, background-color .2s',
+                  '& fieldset': { borderColor: robot.line, borderWidth: '1px !important' },
+                  '&:hover fieldset': { borderColor: robot.emerald },
+                  '&.Mui-focused': { bgcolor: '#fff', boxShadow: `0 0 0 3px ${robot.glow}26` },
+                  '&.Mui-focused fieldset': { borderColor: robot.emerald },
+                },
+                '& textarea, & input': { py: '9px' },
+              }}
               size="small"
               fullWidth
               multiline={step === 'description'}
               maxRows={5}
-              placeholder={step === 'title' ? 'Short title…' : 'Describe the problem… (Ctrl+Enter to send)'}
+              placeholder={step === 'title' ? 'Short title…' : step === 'description' ? 'Describe the problem… (Ctrl+Enter to send)' : 'Ask me… e.g. "today sales"'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -517,12 +613,24 @@ export default function HelpDeskChat({ open, onClose, onRobot }) {
               }}
               slotProps={{ htmlInput: { maxLength: step === 'title' ? 255 : 10000 } }}
             />
-            <IconButton type="submit" sx={{ color: robot.teal }} disabled={!input.trim() || typing} aria-label="Send">
-              <SendRoundedIcon />
+            <IconButton
+              type="submit"
+              disabled={!input.trim() || typing}
+              aria-label="Send"
+              sx={{
+                width: 40, height: 40, flexShrink: 0, bgcolor: robot.teal, color: '#fff',
+                transition: 'background-color .2s, box-shadow .2s',
+                '&:hover': { bgcolor: robot.tealDark, boxShadow: `0 0 10px ${robot.glow}55` },
+                '&.Mui-disabled': { bgcolor: robot.soft, color: robot.muted },
+              }}
+            >
+              <SendRoundedIcon sx={{ fontSize: 19, ml: '2px' }} />
             </IconButton>
-            <Tooltip title="Start over">
-              <IconButton size="small" onClick={restart} aria-label="Start over"><RestartAltRoundedIcon fontSize="small" /></IconButton>
-            </Tooltip>
+            {(step === 'title' || step === 'description') && (
+              <Tooltip title="Start over">
+                <IconButton size="small" onClick={restart} aria-label="Start over"><RestartAltRoundedIcon fontSize="small" /></IconButton>
+              </Tooltip>
+            )}
           </Box>
         )}
       </Paper>
