@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Autocomplete, Box, Button, TextField, Typography } from '@mui/material';
-import PersonAddIcon from '@mui/icons-material/PersonAddAlt';
 import api from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import RecordPicker, { pageLocal } from '../../components/RecordPicker';
 import SalesmanFormDialog from './SalesmanFormDialog';
 
-export default function SalesmanPicker({ value, onChange }) {
+const textOf = (o) => `${o.name} ${o.code || ''} ${o.phone || ''}`;
+
+// Choose the salesman in a popup; add a new one without leaving the counter.
+export default function SalesmanPicker({ value, onChange, label = 'Salesman', placeholder = 'Select salesman', ...props }) {
   const { can } = useAuth();
-  const [input, setInput] = useState('');
   const [options, setOptions] = useState([]);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -21,49 +22,26 @@ export default function SalesmanPicker({ value, onChange }) {
 
   return (
     <>
-      <Box sx={{ display: 'flex', gap: 1 }}>
-        <Autocomplete
-          sx={{ flex: 1 }}
-          size="small"
-          value={value}
-          options={value && !options.some((o) => o.id === value.id) ? [value, ...options] : options}
-          getOptionLabel={(o) => `${o.name} (${o.code})`}
-          isOptionEqualToValue={(a, b) => a.id === b.id}
-          inputValue={input}
-          onInputChange={(e, v) => setInput(v)}
-          onChange={(e, v) => onChange(v)}
-          renderOption={(props, o) => (
-            <li {...props} key={o.id}>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{o.name}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {[o.code, o.phone].filter(Boolean).join(' · ')}
-                </Typography>
-              </Box>
-            </li>
-          )}
-          renderInput={(params) => (
-            <TextField {...params} label="Salesman" placeholder="Select salesman" />
-          )}
-        />
-        {can('salesmen.create') && (
-          <Button
-            variant="outlined"
-            onClick={() => setAdding(true)}
-            sx={{ minWidth: 0, px: 1.5 }}
-            aria-label="Add salesman"
-            title="Add salesman"
-          >
-            <PersonAddIcon fontSize="small" />
-          </Button>
-        )}
-      </Box>
-      {adding && (
+      <RecordPicker
+        {...props}
+        sx={{ width: '100%', ...props.sx }}
+        label={label}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        load={(q) => pageLocal(options, q, textOf)}
+        reloadKey={options}
+        getLabel={(o) => `${o.name}${o.code ? ` (${o.code})` : ''}`}
+        getSecondary={(o) => o.phone || ''}
+        addLabel="Add salesman"
+        onAdd={can('salesmen.create') ? (search) => setAdding(search) : undefined}
+      />
+      {adding !== null && (
         <SalesmanFormDialog
-          initialName={input}
-          onClose={() => setAdding(false)}
+          initialName={adding}
+          onClose={() => setAdding(null)}
           onSaved={(sm) => {
-            setAdding(false);
+            setAdding(null);
             setOptions((prev) => [sm, ...prev]);
             onChange(sm);
           }}
@@ -72,4 +50,3 @@ export default function SalesmanPicker({ value, onChange }) {
     </>
   );
 }
-

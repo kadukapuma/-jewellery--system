@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, MenuItem, Switch, TextField,
+  Alert, Button, DialogActions, DialogContent, DialogTitle, FormControlLabel, Grid, InputAdornment, MenuItem, Switch,
 } from '@mui/material';
 import Dialog from '../../components/Dialog';
+import TextField from '../../components/TextField';
 import FormSection from '../../components/FormSection';
 import api, { APPROVAL_MESSAGE, errorMessage, fieldErrors, isPendingApproval } from '../../api/client';
 import { useNotify } from '../../components/Notify';
