@@ -32,7 +32,7 @@
  *
  * The background is transparent, so it sits cleanly on top of any section of your site.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 // Named imports, so the build keeps only the parts of three.js the robot uses.
 import {
   ACESFilmicToneMapping, AdditiveBlending, BoxGeometry, CanvasTexture, CircleGeometry, Clock, Color,
@@ -65,6 +65,32 @@ function hasWebGL2() {
   return webglOk;
 }
 
+// Weak / older PCs and most phones: fewer pixels and frames, so the robot never slows the till down.
+function isLowEnd() {
+  const nav = typeof navigator !== "undefined" ? navigator : {};
+  const cores = nav.hardwareConcurrency || 4;
+  const memory = nav.deviceMemory || 4; // GB, Chrome/Edge only
+  const touch = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  return cores <= 4 || memory <= 4 || touch;
+}
+
+// Shown instead of the 3D robot when WebGL is not available, so it can still be clicked.
+function FlatRobot({ accent }) {
+  return (
+    <svg viewBox="0 0 100 108" width="100%" height="100%" aria-hidden="true" style={{ display: "block" }}>
+      <ellipse cx="50" cy="103" rx="24" ry="3.5" fill="#000" opacity="0.12" />
+      <line x1="50" y1="10" x2="50" y2="20" stroke="#0c0f0d" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="50" cy="8" r="4.5" fill={accent} />
+      <rect x="18" y="20" width="64" height="48" rx="20" fill="#f3f6f4" stroke="#d5e2dc" strokeWidth="1.5" />
+      <rect x="25" y="28" width="50" height="30" rx="13" fill="#0c0f0d" />
+      <rect x="35" y="37" width="8" height="12" rx="4" fill={accent} />
+      <rect x="57" y="37" width="8" height="12" rx="4" fill={accent} />
+      <rect x="30" y="70" width="40" height="24" rx="10" fill="#f3f6f4" stroke="#d5e2dc" strokeWidth="1.5" />
+      <circle cx="50" cy="82" r="4" fill={accent} opacity="0.85" />
+    </svg>
+  );
+}
+
 export default function RobotMascot({
   size = 360,
   accent = "#22e06b",
@@ -78,14 +104,17 @@ export default function RobotMascot({
   style,
 }) {
   const holder = useRef(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!holder.current) return undefined;
+    if (!holder.current || failed) return undefined;
     const robot = startRobot(holder.current, {
       accent, interactive, shadow, autoWave, jetpack, jetColor, control: control && control.current,
+      onFail: () => setFailed(true),
     });
+    if (!robot) setFailed(true);
     return () => robot && robot.dispose();
-  }, [accent, interactive, shadow, autoWave, jetpack, jetColor, control]);
+  }, [accent, interactive, shadow, autoWave, jetpack, jetColor, control, failed]);
 
   return (
     <div
@@ -94,7 +123,9 @@ export default function RobotMascot({
       role="img"
       aria-label="Animated robot mascot"
       style={{ width: size, maxWidth: "100%", aspectRatio: "1 / 1.08", ...style }}
-    />
+    >
+      {failed && <FlatRobot accent={accent} />}
+    </div>
   );
 }
 
@@ -106,6 +137,7 @@ function startRobot(container, options) {
       return mountRobot(container, options);
     } catch (err) {
       console.warn("RobotMascot: 3D is not available here.", err);
+      container.querySelectorAll("canvas").forEach((c) => c.remove());
     }
   }
   if (options.control) options.control.failed = true;
@@ -128,8 +160,12 @@ function mountRobot(container, options) {
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------- renderer ---------- */
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const lowEnd = isLowEnd();
+  const MAX_DPR = lowEnd ? 1.25 : 1.75;
+  // 30 fps is plenty for a mascot and halves the GPU work of a 60 Hz (or 120 Hz) screen.
+  const FRAME_MS = 1000 / (lowEnd ? 24 : 30);
+  const renderer = new THREE.WebGLRenderer({ antialias: !lowEnd, alpha: true, powerPreference: "low-power" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -487,7 +523,7 @@ function mountRobot(container, options) {
   function resize() {
     const w = container.clientWidth || 300, h = container.clientHeight || 300;
     // the pixel density can change (window moved to another monitor, browser zoom)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     const t = Math.tan((camera.fov * Math.PI) / 360);
@@ -524,6 +560,16 @@ function mountRobot(container, options) {
     : null;
   if (io) io.observe(container);
 
+  // The graphics driver can drop the 3D context (sleep, driver update, too many tabs).
+  // Stop drawing and fall back to the flat robot instead of leaving a blank box.
+  let lost = false;
+  const onLost = (e) => {
+    e.preventDefault();
+    lost = true;
+    if (opts.onFail) opts.onFail();
+  };
+  canvas.addEventListener("webglcontextlost", onLost);
+
   /* ---------- animation loop ---------- */
   const clock = new THREE.Clock();
   let raf = 0, nextBlink = 2, blinkStart = -10, nextWave = 5;
@@ -540,10 +586,14 @@ function mountRobot(container, options) {
   if (renderer.compileAsync) renderer.compileAsync(scene, camera).then(onCompiled, onCompiled);
   else onCompiled();
 
-  function frame() {
+  let lastFrame = -Infinity;
+  function frame(ts = 0) {
+    if (lost) return;
     raf = requestAnimationFrame(frame);
     // always draw the first frame (even off-screen), so "ready" can be reported
     if (!compiled || (drawn && (!visible || document.hidden || ctl.hidden))) { clock.getDelta(); return; }
+    if (drawn && ts - lastFrame < FRAME_MS - 1) return; // frame-rate cap
+    lastFrame = ts;
     const dt = Math.min(clock.getDelta(), 0.05);
     now += dt;
     const idle = reduceMotion ? 0 : 1;
@@ -667,6 +717,7 @@ function mountRobot(container, options) {
       window.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerenter", onEnter);
       canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("webglcontextlost", onLost);
       disposables.forEach((d) => d.dispose && d.dispose());
       envTarget.dispose();
       renderer.dispose();
