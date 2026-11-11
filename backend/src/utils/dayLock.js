@@ -16,11 +16,11 @@ export async function dbToday(conn) {
 
 // Throws when the day end has been done for this date. Call inside the transaction that saves
 // or cancels a record of that date. `date` can be 'YYYY-MM-DD', a DATETIME string, or null (= today).
-// FOR SHARE: a day being closed at the same moment waits for this save to finish (and the other way round).
+// LOCK IN SHARE MODE (not FOR SHARE, which MariaDB rejects): a day being closed at the same moment waits for this save to finish (and the other way round).
 export async function assertDayOpen(conn, date = null) {
   const ymd = date ? String(date).slice(0, 10) : await dbToday(conn);
   const [[closed]] = await conn.query(
-    "SELECT id FROM day_closings WHERE close_date = ? AND status = 'closed' FOR SHARE",
+    "SELECT id FROM day_closings WHERE close_date = ? AND status = 'closed' LOCK IN SHARE MODE",
     [ymd],
   );
   if (closed) {
