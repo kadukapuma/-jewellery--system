@@ -1024,7 +1024,9 @@ INSERT INTO permissions (code, module, action, description, sort_order) VALUES
   ('repairs.cancel',          'repairs',     'cancel',       'Cancel a repair',                          314),
   ('old_gold.view',           'old_gold',    'view',         'See old gold taken from customers',        320),
   ('old_gold.create',         'old_gold',    'create',       'Buy / exchange a customer''s old gold',      321),
-  ('old_gold.cancel',         'old_gold',    'cancel',       'Cancel an old gold receipt',               322);
+  ('old_gold.cancel',         'old_gold',    'cancel',       'Cancel an old gold receipt',               322),
+  ('helpdesk.view',           'helpdesk',    'view',         'See help desk requests sent to the system provider', 330),
+  ('helpdesk.create',         'helpdesk',    'create',       'Send a help desk request to the system provider',    331);
 
 -- Manager: everything except users, roles, settings and audit
 INSERT INTO role_permissions (role_id, permission_id)
@@ -1053,6 +1055,11 @@ WHERE r.name = 'Stock Keeper'
        OR p.code IN ('dashboard.view','gold_prices.view','karats.view','reports.stock','reports.wastage',
                      'craftsman_account.view','tags.print'))
   AND p.code NOT LIKE '%.delete';
+
+-- Help desk: every role can ask the system provider for help.
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r JOIN permissions p
+WHERE p.module = 'helpdesk';
 
 -- Safe edit / delete of money records and gold prices (Danger Zone). Added after the role grants
 -- above so only Admin has them until granted in Roles.

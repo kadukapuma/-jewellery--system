@@ -1,0 +1,143 @@
+/* =========================================================
+   Robot Mascot — Styles & Animations
+   ========================================================= */
+
+:root {
+  --mascot-ink: var(--ink, #0a392c);
+  --mascot-line: var(--line, #e3eee9);
+  --mascot-shadow: var(--shadow-md, 0 12px 30px -12px rgba(6, 42, 33, 0.16));
+  --mascot-ease: var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
+  --mascot-spring: var(--spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+.mascot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  pointer-events: none;
+  will-change: transform;
+  transform-origin: 0 0;
+}
+
+.mascot__robot {
+  pointer-events: auto;
+}
+
+.mascot__bubble {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 0;
+  width: max-content;
+  max-width: var(--bw, 200px);
+  padding: 9px 13px;
+  border: 1px solid var(--mascot-line);
+  border-radius: 16px 16px 16px 4px;
+  background: #ffffff;
+  box-shadow: var(--mascot-shadow);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--mascot-ink);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(10px) scale(0.6);
+  transform-origin: 10% 100%;
+  transition: opacity 0.3s var(--mascot-ease), transform 0.5s var(--mascot-spring);
+  margin: 0;
+}
+
+.mascot[data-side='right'] .mascot__bubble {
+  left: auto;
+  right: 0;
+  border-radius: 16px 16px 4px 16px;
+  transform-origin: 90% 100%;
+}
+
+.mascot__bubble.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+/* Intro sequence */
+.mascot--intro {
+  z-index: 10001;
+}
+
+.mascot--intro .mascot__bubble {
+  left: 80%;
+  top: 4%;
+  bottom: auto;
+  border-radius: 16px 16px 16px 4px;
+}
+
+.mascot__body {
+  position: relative;
+  transform-origin: 50% 37%;
+}
+
+.mascot__body.is-tumble {
+  animation: mascot-tumble 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+.mascot__flash {
+  position: absolute;
+  left: 15%;
+  top: 2%;
+  width: 70%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #ffffff, rgba(147, 220, 44, 0.75) 35%, rgba(2, 202, 150, 0) 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.is-tumble .mascot__flash {
+  animation: mascot-flash 0.55s ease-out both;
+}
+
+@keyframes mascot-tumble {
+  0% {
+    opacity: 0;
+    transform: scale(0.12) rotate(-720deg);
+  }
+  25% {
+    opacity: 1;
+  }
+  55% {
+    transform: scale(1.14, 0.84) rotate(16deg);
+  }
+  72% {
+    transform: scale(0.93, 1.08) rotate(-7deg);
+  }
+  86% {
+    transform: scale(1.03, 0.98) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mascot-flash {
+  0% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* Jet flame trail behind the flying robot */
+.mascot__trail {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10000;
+  pointer-events: none;
+}
+

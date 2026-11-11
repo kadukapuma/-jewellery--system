@@ -7,6 +7,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import AureonLogo from './AureonLogo';
 import Footer from './Footer';
+import SystemRobot from './SystemRobot';
 
 // Icons
 import MenuIcon from '@mui/icons-material/Menu';
@@ -1102,6 +1103,7 @@ export default function Layout() {
         </Box>
         <Footer />
       </Box>
+      <SystemRobot />
     </Box>
   );
 }

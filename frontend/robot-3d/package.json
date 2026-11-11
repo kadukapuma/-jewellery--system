@@ -1,0 +1,24 @@
+{
+  "name": "robot-3d",
+  "version": "1.0.0",
+  "description": "Procedural 3D animated robot mascot built with Three.js (no external 3D model files required)",
+  "main": "index.js",
+  "module": "index.js",
+  "type": "module",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "three": ">=0.150.0"
+  },
+  "keywords": [
+    "threejs",
+    "react",
+    "3d",
+    "robot",
+    "mascot",
+    "animation",
+    "webgl"
+  ],
+  "license": "MIT"
+}
+

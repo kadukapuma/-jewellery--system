@@ -35,6 +35,7 @@ import expensesRoutes from './modules/expenses/expenses.routes.js';
 import dayEndRoutes from './modules/day-end/day-end.routes.js';
 import repairsRoutes from './modules/repairs/repairs.routes.js';
 import oldGoldRoutes from './modules/old-gold/old-gold.routes.js';
+import helpdeskRoutes from './modules/helpdesk/helpdesk.routes.js';
 import dangerZoneRoutes, { myRequestsRouter } from './modules/danger-zone/danger-zone.routes.js';
 
 const app = express();
@@ -77,6 +78,7 @@ app.use('/api/expenses', secured, expensesRoutes);
 app.use('/api/day-end', secured, dayEndRoutes);
 app.use('/api/repairs', secured, repairsRoutes);
 app.use('/api/old-gold', secured, oldGoldRoutes);
+app.use('/api/helpdesk', secured, helpdeskRoutes);
 app.use('/api/danger-zone', secured, requireAdmin, dangerZoneRoutes);
 app.use('/api/change-requests', secured, myRequestsRouter);
 

@@ -28,4 +28,10 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   goldPriceUrl: process.env.GOLD_PRICE_URL || 'https://www.goldpricetoday.lk/api/v1/gold-price',
+  // Help desk: support requests go to the system provider's Task Manager. The key stays on the server.
+  taskManager: {
+    url: (process.env.TASK_MANAGER_API_URL || '').trim().replace(/\/+$/, ''),
+    key: (process.env.TASK_MANAGER_API_KEY || '').trim(),
+    branchCode: (process.env.TASK_MANAGER_BRANCH_CODE || '').trim(),
+  },
 };

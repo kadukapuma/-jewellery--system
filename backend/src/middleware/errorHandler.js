@@ -9,7 +9,7 @@ function duplicateMessage(err) {
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
   if (err instanceof HttpError) {
-    return res.status(err.status).json({ message: err.message, code: err.code });
+    return res.status(err.status).json({ message: err.message, code: err.code, ...(err.errors && { errors: err.errors }) });
   }
   if (err instanceof ZodError) {
     return res.status(400).json({
