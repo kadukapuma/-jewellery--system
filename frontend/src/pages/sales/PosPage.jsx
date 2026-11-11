@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, Checkbox, Divider, FormControlLabel, Grid, IconButton, InputAdornment, MenuItem, Table,
+  Alert, Box, Button, Card, Checkbox, Divider, FormControlLabel, IconButton, InputAdornment, MenuItem, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Typography,
 } from '@mui/material';
 import TextField from '../../components/TextField';
@@ -230,16 +230,26 @@ export default function PosPage() {
     }
   };
 
+  const canEditPrice = (l) => isAdmin || (canDiscount && l.price.range.min < l.price.range.max);
+  const pieces = lines.reduce((s, l) => s + l.qty, 0);
+  const row = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 };
+  const onGold = { color: 'rgba(255,255,255,.8)' };
+
   return (
-    <Grid container spacing={2.5}>
-      <Grid size={{ xs: 12, lg: 8 }}>
-        <Typography sx={{ fontWeight: 600, fontSize: { xs: 30, md: 40 }, letterSpacing: -1.5, mb: 2 }}>New sale</Typography>
-        {correcting && (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            Correcting {correcting.invoice_no} (now cancelled). Fix the items, prices or customer, then save the new bill.
-          </Alert>
-        )}
-        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+    // Desktop: fills the window, nothing scrolls the page. The items list and the side panel scroll inside.
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 400px' },
+        gap: 2.5,
+        height: { lg: 'calc(100vh - 212px)' }, // header ~96 + bottom padding 32 + footer ~72
+        minHeight: { lg: 560 },
+      }}
+    >
+      {/* ---------- Left: scan + items ---------- */}
+      <Card sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box sx={{ p: 2, pb: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
+          <Typography sx={{ fontWeight: 600, fontSize: 24, letterSpacing: -0.5, whiteSpace: 'nowrap', mr: 1 }}>New sale</Typography>
           <TextField
             inputRef={scanRef}
             autoFocus
@@ -248,306 +258,311 @@ export default function PosPage() {
             onChange={(e) => { setScan(e.target.value); setScanError(''); }}
             onKeyDown={(e) => e.key === 'Enter' && addItem()}
             error={!!scanError}
-            helperText={scanError || ' '}
             slotProps={{
               input: {
                 startAdornment: <InputAdornment position="start"><QrCodeScannerIcon /></InputAdornment>,
                 endAdornment: <Button size="small" onClick={addItem}>Add</Button>,
-                sx: { fontSize: 18, py: 0.5 },
+                sx: { fontSize: 16, height: 44 },
               },
             }}
           />
-          <Button variant="contained" startIcon={<ListIcon />} onClick={() => setPicking(true)} sx={{ height: 48, flexShrink: 0 }}>
+          <Button variant="contained" startIcon={<ListIcon />} onClick={() => setPicking(true)} sx={{ height: 44, flexShrink: 0, whiteSpace: 'nowrap' }}>
             Select item
           </Button>
         </Box>
-        <Card sx={{ mt: 1 }}>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Item</TableCell>
-                  <TableCell align="center">Qty</TableCell>
-                  <TableCell align="right">Billed weight</TableCell>
-                  <TableCell align="right">Discount (each)</TableCell>
-                  <TableCell align="right">Price (each)</TableCell>
-                  <TableCell align="right">Total</TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {lines.map((l) => (
-                  <TableRow key={l.item.id}>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{l.item.name}</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{l.item.item_code}</Typography>
-                      <Typography variant="caption" color="text.secondary">{l.item.karat_name} · {formatMoney(l.item.current_gram_price)} / g</Typography>
-                    </TableCell>
-                    <TableCell align="center">
-                      {l.item.stock_qty > 1 ? (
-                        <TextField type="number" value={l.qty} onChange={(e) => setQty(l.item.id, Number(e.target.value))}
-                          slotProps={{ htmlInput: { min: 1, max: l.item.stock_qty, style: { textAlign: 'center' } } }} sx={{ width: 70 }} />
-                      ) : 1}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{formatWeight(l.price.billed)}</Typography>
-                      {l.price.wastage > 0 && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          {l.price.net.toFixed(3)} net + {l.price.wastage.toFixed(3)} wastage
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right" sx={{ width: 130 }}>
-                      {isAdmin || (canDiscount && l.price.range.min < l.price.range.max) ? (
-                        <TextField
-                          type="number"
-                          placeholder="0"
-                          value={l.discountText ?? (l.price.valid && l.price.sold < l.price.range.max ? String(round2(l.price.range.max - l.price.sold)) : '')}
-                          onChange={(e) => setLineDiscount(l.item.id, e.target.value)}
-                          error={l.problem?.level === 'error'}
-                          slotProps={{ htmlInput: { min: 0, step: 'any', style: { textAlign: 'right' } } }}
-                          sx={{ width: 110 }}
-                        />
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">—</Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right" sx={{ width: 170 }}>
-                      {isAdmin || (canDiscount && l.price.range.min < l.price.range.max) ? (
-                        <TextField
-                          type="number"
-                          value={l.unitPrice}
-                          onChange={(e) => setUnitPrice(l.item.id, e.target.value)}
-                          error={l.problem?.level === 'error'}
-                          slotProps={{ htmlInput: { step: 'any', style: { textAlign: 'right' } } }}
-                          sx={{ width: 150, '& .MuiOutlinedInput-root': l.problem?.level === 'warning' ? { bgcolor: '#FFF4E5' } : {} }}
-                        />
-                      ) : (
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatMoney(l.price.range.max)}</Typography>
-                      )}
-                      <Typography variant="caption" sx={{ display: 'block', whiteSpace: 'nowrap', color: l.problem ? `${l.problem.level}.main` : 'text.secondary' }}>
-                        {l.problem ? l.problem.text : l.price.range.min < l.price.range.max
-                          ? `${formatMoney(l.price.range.min)} – ${formatMoney(l.price.range.max)}`
-                          : 'Fixed price'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatMoney(l.price.total)}</Typography>
-                      {l.price.total < l.price.max && (
-                        <Typography variant="caption" color="success.main">− {formatMoney(l.price.max - l.price.total)}</Typography>
-                      )}
-                    </TableCell>
-                    <TableCell padding="checkbox">
-                      <Tooltip title="Remove"><IconButton size="small" onClick={() => setCart((p) => p.filter((c) => c.item.id !== l.item.id))}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!lines.length && (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6, color: 'text.secondary' }}>Scan an item to start the bill</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Card>
-        {rates.length > 0 && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            Gold rate used: {rates.map(([k, r]) => `${k} ${formatMoney(r)}/g`).join(' · ')} — the price is fixed on the bill when you save.
-          </Typography>
+        {(scanError || correcting) && (
+          <Box sx={{ px: 2, pb: 1.5 }}>
+            {scanError && <Alert severity="error" sx={{ py: 0 }}>{scanError}</Alert>}
+            {correcting && (
+              <Alert severity="info" sx={{ py: 0, mt: scanError ? 1 : 0 }}>
+                Correcting {correcting.invoice_no} (now cancelled). Fix the items, prices or customer, then save the new bill.
+              </Alert>
+            )}
+          </Box>
         )}
-      </Grid>
+        <Divider />
 
-      <Grid size={{ xs: 12, lg: 4 }}>
-        <Box sx={{ position: { lg: 'sticky' }, top: 16 }}>
-          <Card sx={{ p: 2.5, mb: 2 }}>
-            <Box sx={{ mb: 2 }}>
-              <SalesmanPicker value={salesman} onChange={setSalesman} />
-            </Box>
-            <Divider sx={{ my: 1.5 }} />
+        <TableContainer sx={{ flex: 1, minHeight: { xs: 200, lg: 0 }, overflow: 'auto' }}>
+          <Table size="small" stickyHeader sx={{ '& td, & th': { verticalAlign: 'middle' } }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Item</TableCell>
+                <TableCell align="center" sx={{ width: 80 }}>Qty</TableCell>
+                <TableCell align="right" sx={{ width: 130 }}>Weight</TableCell>
+                <TableCell align="right" sx={{ width: 120 }}>Discount</TableCell>
+                <TableCell align="right" sx={{ width: 160 }}>Price (each)</TableCell>
+                <TableCell align="right" sx={{ width: 130 }}>Total</TableCell>
+                <TableCell sx={{ width: 44 }} />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {lines.map((l) => (
+                <TableRow key={l.item.id} hover>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>{l.item.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {l.item.item_code} · {l.item.karat_name} · {formatMoney(l.item.current_gram_price)}/g
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="center">
+                    {l.item.stock_qty > 1 ? (
+                      <TextField type="number" value={l.qty} onChange={(e) => setQty(l.item.id, Number(e.target.value))}
+                        slotProps={{ htmlInput: { min: 1, max: l.item.stock_qty, style: { textAlign: 'center' } } }} sx={{ width: 64 }} />
+                    ) : <Typography variant="body2">1</Typography>}
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{formatWeight(l.price.billed)}</Typography>
+                    {l.price.wastage > 0 && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'nowrap' }}>
+                        {l.price.net.toFixed(3)} + {l.price.wastage.toFixed(3)} w
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    {canEditPrice(l) ? (
+                      <TextField
+                        type="number"
+                        placeholder="0"
+                        value={l.discountText ?? (l.price.valid && l.price.sold < l.price.range.max ? String(round2(l.price.range.max - l.price.sold)) : '')}
+                        onChange={(e) => setLineDiscount(l.item.id, e.target.value)}
+                        error={l.problem?.level === 'error'}
+                        slotProps={{ htmlInput: { min: 0, step: 'any', style: { textAlign: 'right' } } }}
+                        sx={{ width: 104 }}
+                      />
+                    ) : <Typography variant="body2" color="text.secondary">—</Typography>}
+                  </TableCell>
+                  <TableCell align="right">
+                    {canEditPrice(l) ? (
+                      <TextField
+                        type="number"
+                        value={l.unitPrice}
+                        onChange={(e) => setUnitPrice(l.item.id, e.target.value)}
+                        error={l.problem?.level === 'error'}
+                        slotProps={{ htmlInput: { step: 'any', style: { textAlign: 'right' } } }}
+                        sx={{ width: 144, '& .MuiOutlinedInput-root': l.problem?.level === 'warning' ? { bgcolor: '#FFF4E5' } : {} }}
+                      />
+                    ) : (
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatMoney(l.price.range.max)}</Typography>
+                    )}
+                    <Typography variant="caption" sx={{ display: 'block', whiteSpace: 'nowrap', color: l.problem ? `${l.problem.level}.main` : 'text.secondary' }}>
+                      {l.problem ? l.problem.text : l.price.range.min < l.price.range.max
+                        ? `${formatMoney(l.price.range.min)} – ${formatMoney(l.price.range.max)}`
+                        : 'Fixed price'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatMoney(l.price.total)}</Typography>
+                    {l.price.total < l.price.max && (
+                      <Typography variant="caption" color="success.main" sx={{ display: 'block' }}>− {formatMoney(l.price.max - l.price.total)}</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell padding="checkbox">
+                    <Tooltip title="Remove"><IconButton size="small" onClick={() => setCart((p) => p.filter((c) => c.item.id !== l.item.id))}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!lines.length && (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 8, color: 'text.secondary', borderBottom: 0 }}>
+                    <QrCodeScannerIcon sx={{ fontSize: 40, color: stone[300], display: 'block', mx: 'auto', mb: 1 }} />
+                    Scan an item, or use Select item, to start the bill
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <Divider />
+        <Box sx={{ ...row, px: 2, py: 1.25, bgcolor: stone[50], flexWrap: 'wrap' }}>
+          <Typography variant="caption" color="text.secondary">
+            {rates.length
+              ? `Gold rate: ${rates.map(([k, r]) => `${k} ${formatMoney(r)}/g`).join(' · ')} — fixed on the bill when you save`
+              : 'Prices follow today’s gold rate'}
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {pieces} {pieces === 1 ? 'piece' : 'pieces'} · {formatMoney(afterLines)}
+          </Typography>
+        </Box>
+      </Card>
+
+      {/* ---------- Right: who, payment, total ---------- */}
+      <Card sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Customer & salesman */}
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
             <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setUseAdvance(true); }} />
             {customer && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: -0.75 }}>
                 {advance > 0 ? `Advance ${formatMoney(advance)} available` : customer.balance > 0 ? `Owes ${formatMoney(customer.balance)}` : 'No balance'}
                 {Number(customer.credit_limit) > 0 ? ` · credit limit ${formatMoney(customer.credit_limit)}` : ' · no credit'}
               </Typography>
             )}
             {advance > 0 && (
               <FormControlLabel
-                sx={{ mt: 0.5 }}
-                label={`Use advance (${formatMoney(advance)}) on this bill`}
+                sx={{ mt: -1 }}
+                label={<Typography variant="body2">Use advance ({formatMoney(advance)})</Typography>}
                 control={<Checkbox size="small" checked={useAdvance} onChange={(e) => setUseAdvance(e.target.checked)} />}
               />
             )}
-          </Card>
+            <SalesmanPicker value={salesman} onChange={setSalesman} />
+          </Box>
 
+          {/* Old gold exchange */}
           {can('old_gold.create') && oldGoldSetup && (
-            <Card sx={{ p: 2.5, mb: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <RecyclingIcon fontSize="small" sx={{ color: gold[700] }} />
-                <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>Old gold exchange</Typography>
-                {oldGold.length > 0 && <Button size="small" color="inherit" onClick={() => setOldGold([])}>Remove</Button>}
-                <Button size="small" variant={oldGold.length ? 'text' : 'outlined'} onClick={() => setEditingOldGold(true)}>
-                  {oldGold.length ? 'Change' : 'Add old gold'}
-                </Button>
-              </Box>
-              {oldGold.length > 0 ? (
-                <Box sx={{ mt: 1 }}>
-                  {oldGold.map((l, i) => {
-                    const p = priceOldGold(l, oldGoldSetup);
-                    return (
-                      <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
-                        <Typography variant="body2" color="text.secondary">{l.description} · {p.karatName} · {formatWeight(p.net)}</Typography>
-                        <Typography variant="body2">{formatMoney(p.value)}</Typography>
-                      </Box>
-                    );
-                  })}
-                  {oldGoldExtra > 0 && (
-                    <Alert severity={customer ? 'info' : 'warning'} sx={{ mt: 1 }}>
-                      {customer
-                        ? `${formatMoney(oldGoldExtra)} more than the bill stays as ${customer.name}'s advance.`
-                        : `Worth ${formatMoney(oldGoldExtra)} more than the bill. Choose the customer to keep it as an advance.`}
-                    </Alert>
-                  )}
+            <Box sx={{ border: `1px solid ${stone[200]}`, borderRadius: '14px', px: 1.5, py: 1 }}>
+              <Box sx={row}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                  <RecyclingIcon fontSize="small" sx={{ color: gold[700] }} />
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>Old gold</Typography>
+                  {oldGold.length > 0 && <Typography variant="body2" color="text.secondary">{formatMoney(oldGoldSum.value)}</Typography>}
                 </Box>
-              ) : (
-                <Typography variant="caption" color="text.secondary">The customer&apos;s old gold, valued at today&apos;s rate, comes off this bill</Typography>
+                <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                  {oldGold.length > 0 && <Button size="small" color="inherit" onClick={() => setOldGold([])}>Remove</Button>}
+                  <Button size="small" onClick={() => setEditingOldGold(true)}>{oldGold.length ? 'Change' : 'Add'}</Button>
+                </Box>
+              </Box>
+              {oldGold.map((l, i) => {
+                const p = priceOldGold(l, oldGoldSetup);
+                return (
+                  <Box key={i} sx={row}>
+                    <Typography variant="caption" color="text.secondary" noWrap>{l.description} · {p.karatName} · {formatWeight(p.net)}</Typography>
+                    <Typography variant="caption">{formatMoney(p.value)}</Typography>
+                  </Box>
+                );
+              })}
+              {oldGoldExtra > 0 && (
+                <Alert severity={customer ? 'info' : 'warning'} sx={{ mt: 1, py: 0 }}>
+                  {customer
+                    ? `${formatMoney(oldGoldExtra)} more than the bill stays as ${customer.name}'s advance.`
+                    : `Worth ${formatMoney(oldGoldExtra)} more than the bill. Choose the customer to keep it as an advance.`}
+                </Alert>
               )}
-            </Card>
+            </Box>
           )}
 
-          <Box sx={{ bgcolor: gold[700], color: '#fff', borderRadius: '28px', p: 3, mb: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-              <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Subtotal ({lines.reduce((s, l) => s + l.qty, 0)} pcs)</Typography>
-              <Typography sx={{ fontWeight: 600 }}>{formatMoney(subtotal)}</Typography>
+          {/* Payment */}
+          <Box>
+            <Box sx={{ ...row, mb: 1 }}>
+              <Typography sx={{ fontWeight: 600 }}>Payment</Typography>
+              <Box>
+                {payments.length < 4 && (
+                  <Button size="small" startIcon={<AddIcon />} onClick={() => setPayments((p) => [...p.map((x) => ({ ...x, auto: false })), newPayment('card')])}>Split</Button>
+                )}
+                <Button size="small" variant="outlined" onClick={() => setPayments([{ ...newPayment(), amount: toPay, auto: true }])} disabled={!toPay} sx={{ ml: 0.5 }}>Full cash</Button>
+              </Box>
+            </Box>
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              {payments.map((p, i) => (
+                <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '130px 1fr 32px', gap: 1, alignItems: 'center', ...(p.method !== 'cash' ? { bgcolor: stone[50], borderRadius: '14px', p: 1 } : {}) }}>
+                  <TextField select value={p.method} onChange={(e) => setPayment(i, { method: e.target.value })}>
+                    {Object.entries(PAYMENT_METHODS).map(([v, label]) => <MenuItem key={v} value={v}>{label}</MenuItem>)}
+                  </TextField>
+                  <TextField type="number" placeholder="Amount" value={p.amount} onChange={(e) => setPayment(i, { amount: e.target.value })}
+                    slotProps={{ htmlInput: { min: 0, step: 'any', style: { textAlign: 'right' } } }} />
+                  <IconButton size="small" onClick={() => setPayments((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [newPayment()]))}><DeleteIcon fontSize="small" /></IconButton>
+                  {p.method !== 'cash' && (
+                    <Box sx={{ gridColumn: '1 / 3', display: 'grid', gap: 1 }}>
+                      <BankAccountPicker label="Into account" value={p.bank_account_id || ''} onChange={(id) => setPayment(i, { bank_account_id: id })} />
+                      <TextField placeholder={p.method === 'card' ? 'Approval code' : 'Reference no.'} value={p.reference_no}
+                        onChange={(e) => setPayment(i, { reference_no: e.target.value })} />
+                    </Box>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Credit */}
+          {balance > 0 && cart.length > 0 && (
+            <Box sx={{ p: 1.5, bgcolor: stone[50], borderRadius: '14px' }}>
+              <Box sx={row}>
+                <Typography sx={{ fontWeight: 600 }}>On credit</Typography>
+                <Typography sx={{ fontWeight: 700 }}>{formatMoney(balance)}</Typography>
+              </Box>
+              {!can('sales.credit') ? (
+                <Typography variant="caption" color="error.main">You cannot give credit – take the full amount.</Typography>
+              ) : (
+                <>
+                  {can('instalments.create') && (
+                    <FormControlLabel label={<Typography variant="body2">Pay in instalments</Typography>}
+                      control={<Checkbox size="small" checked={credit.useInstalments} onChange={(e) => setCredit({ ...credit, useInstalments: e.target.checked })} />} />
+                  )}
+                  {credit.useInstalments ? (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                      <TextField label="Instalments" type="number" value={credit.count} onChange={(e) => setCredit({ ...credit, count: e.target.value })}
+                        slotProps={{ htmlInput: { min: 2, max: 60 } }} />
+                      <TextField select label="Every" value={credit.frequency} onChange={(e) => setCredit({ ...credit, frequency: e.target.value })}>
+                        <MenuItem value="monthly">Month</MenuItem>
+                        <MenuItem value="weekly">Week</MenuItem>
+                      </TextField>
+                      <TextField label="First due" type="date" value={credit.start_date} onChange={(e) => setCredit({ ...credit, start_date: e.target.value })}
+                        slotProps={{ inputLabel: { shrink: true } }} sx={{ gridColumn: '1 / 3' }}
+                        helperText={Number(credit.count) >= 2 ? `${credit.count} × about ${formatMoney(balance / Number(credit.count))}` : ' '} />
+                    </Box>
+                  ) : (
+                    <TextField label="Pay by" type="date" value={credit.due_date} onChange={(e) => setCredit({ ...credit, due_date: e.target.value })}
+                      slotProps={{ inputLabel: { shrink: true } }} sx={{ mt: 1 }} />
+                  )}
+                </>
+              )}
+            </Box>
+          )}
+        </Box>
+
+        {/* Always visible: totals + complete */}
+        <Box sx={{ p: 2, pt: 0 }}>
+          <Box sx={{ bgcolor: gold[700], color: '#fff', borderRadius: '22px', px: 2.5, py: 2, display: 'grid', gap: 0.5 }}>
+            <Box sx={row}>
+              <Typography variant="body2" sx={onGold}>Subtotal ({pieces} pcs)</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatMoney(subtotal)}</Typography>
             </Box>
             {discountTotal - billDiscount > 0 && (
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Item discounts</Typography>
-                <Typography sx={{ fontWeight: 600 }}>− {formatMoney(discountTotal - billDiscount)}</Typography>
+              <Box sx={row}>
+                <Typography variant="body2" sx={onGold}>Item discounts</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>− {formatMoney(discountTotal - billDiscount)}</Typography>
               </Box>
             )}
             {isAdmin && (
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Bill discount (Admin)</Typography>
+              <Box sx={row}>
+                <Typography variant="body2" sx={onGold}>Bill discount (Admin)</Typography>
                 <TextField type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0"
-                  slotProps={{ htmlInput: { min: 0, step: 'any', style: { textAlign: 'right' } } }}
-                  sx={{ width: 140, '& .MuiOutlinedInput-root': { bgcolor: 'rgba(255,255,255,.95)' } }} />
+                  slotProps={{ htmlInput: { min: 0, step: 'any', style: { textAlign: 'right', padding: '4px 10px' } } }}
+                  sx={{ width: 120, '& .MuiOutlinedInput-root': { bgcolor: 'rgba(255,255,255,.95)' } }} />
               </Box>
             )}
-            <Divider sx={{ borderColor: 'rgba(255,255,255,.25)', my: 1.5 }} />
-            {advanceUsed > 0 || oldGoldUsed > 0 ? (
-              <>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Total</Typography>
-                  <Typography sx={{ fontWeight: 600 }}>{formatMoney(total)}</Typography>
-                </Box>
-                {oldGoldUsed > 0 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Old gold ({formatWeight(oldGoldSum.net)})</Typography>
-                    <Typography sx={{ fontWeight: 600 }}>− {formatMoney(oldGoldUsed)}</Typography>
-                  </Box>
-                )}
-                {advanceUsed > 0 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Advance</Typography>
-                    <Typography sx={{ fontWeight: 600 }}>− {formatMoney(advanceUsed)}</Typography>
-                  </Box>
-                )}
-                {advanceLeft > 0 && (
-                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.7)' }}>Advance left after this bill: {formatMoney(advanceLeft)}</Typography>
-                )}
-                <Divider sx={{ borderColor: 'rgba(255,255,255,.25)', my: 1.5 }} />
-                <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>To pay</Typography>
-              </>
-            ) : (
-              <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>Total</Typography>
+            {oldGoldUsed > 0 && (
+              <Box sx={row}>
+                <Typography variant="body2" sx={onGold}>Old gold ({formatWeight(oldGoldSum.net)})</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>− {formatMoney(oldGoldUsed)}</Typography>
+              </Box>
             )}
-            <Typography sx={{ fontSize: 40, fontWeight: 600, letterSpacing: -1.5, lineHeight: 1.1 }}>{formatMoney(toPay)}</Typography>
+            {advanceUsed > 0 && (
+              <Box sx={row}>
+                <Typography variant="body2" sx={onGold}>Advance{advanceLeft > 0 ? ` (${formatMoney(advanceLeft)} left)` : ''}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>− {formatMoney(advanceUsed)}</Typography>
+              </Box>
+            )}
+            <Divider sx={{ borderColor: 'rgba(255,255,255,.25)', my: 0.75 }} />
+            <Box sx={{ ...row, alignItems: 'flex-end' }}>
+              <Box>
+                <Typography variant="body2" sx={onGold}>{advanceUsed > 0 || oldGoldUsed > 0 ? 'To pay' : 'Total'}</Typography>
+                <Typography sx={{ fontSize: 32, fontWeight: 600, letterSpacing: -1, lineHeight: 1.1 }}>{formatMoney(toPay)}</Typography>
+              </Box>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="caption" sx={{ ...onGold, display: 'block' }}>Received {formatMoney(received)}</Typography>
+                {change > 0 && <Typography sx={{ fontWeight: 700 }}>Change {formatMoney(change)}</Typography>}
+                {balance > 0 && cart.length > 0 && <Typography variant="body2" sx={{ fontWeight: 600 }}>Credit {formatMoney(balance)}</Typography>}
+              </Box>
+            </Box>
           </Box>
-
-          <Card sx={{ p: 2.5, mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-              <Typography sx={{ fontWeight: 600, flexGrow: 1 }}>Payment</Typography>
-              <Button size="small" onClick={() => setPayments([{ ...newPayment(), amount: toPay, auto: true }])} disabled={!toPay}>Full cash</Button>
-            </Box>
-            {payments.map((p, i) => (
-              <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 1, mb: 1 }}>
-                <TextField select value={p.method} onChange={(e) => setPayment(i, { method: e.target.value })}>
-                  {Object.entries(PAYMENT_METHODS).map(([v, label]) => <MenuItem key={v} value={v}>{label}</MenuItem>)}
-                </TextField>
-                <TextField type="number" placeholder="Amount" value={p.amount} onChange={(e) => setPayment(i, { amount: e.target.value })}
-                  slotProps={{ htmlInput: { min: 0, step: 'any' } }} />
-                <IconButton size="small" onClick={() => setPayments((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [newPayment()]))}><DeleteIcon fontSize="small" /></IconButton>
-                {p.method !== 'cash' && (
-                  <Box sx={{ gridColumn: '1 / 3' }}>
-                    <BankAccountPicker label="Into account" value={p.bank_account_id || ''} onChange={(id) => setPayment(i, { bank_account_id: id })} />
-                  </Box>
-                )}
-                {p.method !== 'cash' && (
-                  <TextField placeholder={p.method === 'card' ? 'Approval code' : 'Reference no.'} value={p.reference_no}
-                    onChange={(e) => setPayment(i, { reference_no: e.target.value })} sx={{ gridColumn: '1 / 3' }} />
-                )}
-              </Box>
-            ))}
-            {payments.length < 4 && (
-              <Button size="small" startIcon={<AddIcon />} onClick={() => setPayments((p) => [...p.map((x) => ({ ...x, auto: false })), newPayment('card')])}>Split payment</Button>
-            )}
-            <Divider sx={{ my: 1.5 }} />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-              <Typography color="text.secondary">To pay</Typography>
-              <Typography sx={{ fontWeight: 600 }}>{formatMoney(toPay)}</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography color="text.secondary">Received</Typography>
-              <Typography sx={{ fontWeight: 600 }}>{formatMoney(received)}</Typography>
-            </Box>
-            {change > 0 && (
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                <Typography sx={{ fontWeight: 600, color: 'success.main' }}>Change to give</Typography>
-                <Typography sx={{ fontWeight: 700, color: 'success.main', fontSize: 20 }}>{formatMoney(change)}</Typography>
-              </Box>
-            )}
-            {balance > 0 && cart.length > 0 && (
-              <Box sx={{ mt: 1, p: 1.5, bgcolor: stone[50], borderRadius: '14px' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography sx={{ fontWeight: 600 }}>On credit</Typography>
-                  <Typography sx={{ fontWeight: 700 }}>{formatMoney(balance)}</Typography>
-                </Box>
-                {!can('sales.credit') ? (
-                  <Typography variant="caption" color="error.main">You cannot give credit – take the full amount.</Typography>
-                ) : (
-                  <>
-                    {can('instalments.create') && (
-                      <FormControlLabel label="Pay in instalments"
-                        control={<Checkbox size="small" checked={credit.useInstalments} onChange={(e) => setCredit({ ...credit, useInstalments: e.target.checked })} />} />
-                    )}
-                    {credit.useInstalments ? (
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                        <TextField label="Instalments" type="number" value={credit.count} onChange={(e) => setCredit({ ...credit, count: e.target.value })}
-                          slotProps={{ htmlInput: { min: 2, max: 60 } }} />
-                        <TextField select label="Every" value={credit.frequency} onChange={(e) => setCredit({ ...credit, frequency: e.target.value })}>
-                          <MenuItem value="monthly">Month</MenuItem>
-                          <MenuItem value="weekly">Week</MenuItem>
-                        </TextField>
-                        <TextField label="First due" type="date" value={credit.start_date} onChange={(e) => setCredit({ ...credit, start_date: e.target.value })}
-                          slotProps={{ inputLabel: { shrink: true } }} sx={{ gridColumn: '1 / 3' }}
-                          helperText={Number(credit.count) >= 2 ? `${credit.count} × about ${formatMoney(balance / Number(credit.count))}` : ' '} />
-                      </Box>
-                    ) : (
-                      <TextField label="Pay by" type="date" value={credit.due_date} onChange={(e) => setCredit({ ...credit, due_date: e.target.value })}
-                        slotProps={{ inputLabel: { shrink: true } }} sx={{ mt: 1 }} />
-                    )}
-                  </>
-                )}
-              </Box>
-            )}
-          </Card>
-
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          <Button fullWidth size="large" variant="contained" onClick={save} disabled={busy || !cart.length || hasPriceError}>
+          {error && <Alert severity="error" sx={{ mt: 1.5, py: 0 }}>{error}</Alert>}
+          <Button fullWidth size="large" variant="contained" onClick={save} disabled={busy || !cart.length || hasPriceError} sx={{ mt: 1.5, height: 50 }}>
             Complete sale {toPay ? formatMoney(toPay) : ''}
           </Button>
         </Box>
-      </Grid>
+      </Card>
+
       {editingOldGold && (
         <OldGoldExchangeDialog initial={oldGold} setup={oldGoldSetup} onClose={() => setEditingOldGold(false)}
           onDone={(next) => { setOldGold(next); setEditingOldGold(false); }} />
@@ -555,6 +570,6 @@ export default function PosPage() {
       {picking && (
         <ItemPickerDialog inCart={new Set(cart.map((c) => c.item.id))} onClose={() => setPicking(false)} onAdd={addPicked} />
       )}
-    </Grid>
+    </Box>
   );
 }
